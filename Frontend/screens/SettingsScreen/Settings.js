@@ -7,6 +7,7 @@ import {
   ScrollView,
   Switch,
   Alert,
+  Image,
 } from 'react-native';
 import { SettingsStyles } from './styles/AppStyles';
 
@@ -14,6 +15,36 @@ const SettingsScreen = ({ navigation }) => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [reminderTime, setReminderTime] = useState('19:00');
   const [autoSave, setAutoSave] = useState(true);
+
+  // Mock user data - replace with actual user data from your app state/context
+  const userData = {
+    name: 'John Doe',
+    email: 'john.doe@example.com',
+    profileImage: null, // Set to image URI when available
+    joinDate: 'March 2024',
+  };
+
+  const ProfileSection = () => (
+    <TouchableOpacity style={SettingsStyles.profileSection} onPress={() => console.log('Edit profile')}>
+      <View style={SettingsStyles.profileImageContainer}>
+        {userData.profileImage ? (
+          <Image source={{ uri: userData.profileImage }} style={SettingsStyles.profileImage} />
+        ) : (
+          <View style={SettingsStyles.profileImagePlaceholder}>
+            <Text style={SettingsStyles.profileImageText}>
+              {userData.name.split(' ').map(n => n[0]).join('')}
+            </Text>
+          </View>
+        )}
+      </View>
+      <View style={SettingsStyles.profileInfo}>
+        <Text style={SettingsStyles.profileName}>{userData.name}</Text>
+        <Text style={SettingsStyles.profileEmail}>{userData.email}</Text>
+        <Text style={SettingsStyles.profileJoinDate}>Member since {userData.joinDate}</Text>
+      </View>
+      <Text style={SettingsStyles.profileArrow}>›</Text>
+    </TouchableOpacity>
+  );
 
   const SettingItem = ({ title, subtitle, onPress, rightComponent, isLast = false }) => (
     <TouchableOpacity 
@@ -45,6 +76,8 @@ const SettingsScreen = ({ navigation }) => {
         <View style={SettingsStyles.header}>
           <Text style={SettingsStyles.headerTitle}>Settings</Text>
         </View>
+
+        <ProfileSection />
 
         <View style={SettingsStyles.section}>
           <View style={SettingsStyles.sectionHeader}>
