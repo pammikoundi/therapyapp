@@ -1,11 +1,9 @@
-
 import statistics
-import requests
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
-from models.schemas import Message, MessageRole
+from models.schemas import Message
 from core.firebase import db
-from core.genkit_gemini import generate_followup_question
+from core.genkit_gemini import generate_followup_question, summarize_text_flow
 from google.cloud.firestore_v1 import ArrayUnion
 from core.auth import get_current_user
 from datetime import datetime
@@ -30,13 +28,11 @@ def analyze_messages(messages: List[dict]):
         "emotion_counts": emotion_counts
     }
 
-def summarize_text(messages: List[dict]):
-    # Use Gemini or another LLM to summarize the session
+async def summarize_text(messages: List[dict]):
+    # Use Gemini to summarize the session
     context = "\n".join([m["text"] for m in messages if "text" in m])
-    prompt = f"Summarize the following therapy session:\n{context}\nSummary:"
-    return generate_followup_question([{"text": prompt}])
+    return await summarize_text_flow(context)
 
-# --- Close session endpoint ---
 @router.post("/close")
 async def close_session(session_id: str, user=Depends(get_current_user)):
     session_ref = db.collection("sessions").document(session_id)
@@ -50,7 +46,7 @@ async def close_session(session_id: str, user=Depends(get_current_user)):
     # Only summarize if session is long enough (e.g., 5+ messages)
     if len(messages) < 5:
         return {"status": "not summarized", "reason": "Session too short"}
-    summary = summarize_text(messages)
+    summary = await summarize_text(messages)
     analytics = analyze_messages(messages)
     # Store summary and analytics in a separate collection
     db.collection("session_summaries").document(session_id).set({
@@ -65,7 +61,7 @@ async def close_session(session_id: str, user=Depends(get_current_user)):
     summaries = db.collection("session_summaries").where("user_id", "==", user["uid"]).stream()
     all_summaries = [s.to_dict() for s in summaries]
     overall_text = "\n".join([s.get("summary", "") for s in all_summaries if s.get("summary")])
-    overall_summary = summarize_text([{"text": overall_text}]) if overall_text else ""
+    overall_summary = await summarize_text([{"text": overall_text}]) if overall_text else ""
     # Average analytics
     all_intensities = [s["analytics"]["avg_intensity"] for s in all_summaries if s.get("analytics") and "avg_intensity" in s["analytics"]]
     avg_intensity = statistics.mean(all_intensities) if all_intensities else 0
@@ -86,17 +82,6 @@ async def close_session(session_id: str, user=Depends(get_current_user)):
     })
     return {"status": "summarized", "summary": summary, "analytics": analytics, "overall_summary": overall_summary}
 
-from fastapi import APIRouter, Depends, HTTPException
-from models.schemas import Message, MessageRole
-from core.firebase import db
-from core.genkit_gemini import generate_followup_question
-from google.cloud.firestore_v1 import ArrayUnion
-from core.auth import get_current_user
-from datetime import datetime
-
-router = APIRouter()
-
-# Generate a follow-up question using Gemini and session history
 @router.post("/generate-question")
 async def generate_question(session_id: str, user=Depends(get_current_user)):
     session_ref = db.collection("sessions").document(session_id)
@@ -107,7 +92,7 @@ async def generate_question(session_id: str, user=Depends(get_current_user)):
     if not session_data:
         raise HTTPException(status_code=404, detail="Session data not found")
     history = session_data.get("messages", [])
-    question = generate_followup_question(history)
+    question = await generate_followup_question(history)
     return {"question": question}
 
 @router.post("/")
@@ -119,9 +104,6 @@ async def start_session(user=Depends(get_current_user)):
         "messages": []
     })
     return {"session_id": session_ref.id, "status": "started", "user": user}
-
-
-# Redefined endpoint to add a message (user or generated)
 
 @router.post("/message")
 async def add_message(message: Message, user=Depends(get_current_user)):

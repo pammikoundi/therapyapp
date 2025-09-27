@@ -9,3 +9,4 @@ pydantic-settings
 certifi
 python-multipart
 spacy
+google-generativeai
