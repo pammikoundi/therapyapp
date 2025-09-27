@@ -6,8 +6,8 @@ from core.config import settings
 # Configure the Google Generative AI client
 genai.configure(api_key=settings.gemini_api_key)
 
-# Initialize the Gemini 2.5 Flash model
-model = genai.GenerativeModel('gemini-2.5-flash')
+# Initialize the Gemini Pro model
+model = genai.GenerativeModel('gemini-pro')
 
 async def generate_followup_question(history: List[dict]) -> str:
     """
@@ -23,7 +23,7 @@ async def generate_followup_question(history: List[dict]) -> str:
                 context_parts.append(f"{speaker}: {msg['text']}")
         
         context = "\n".join(context_parts)
-    prompt = f"""Given the following conversation history, generate a brief therapeutic response (1-2 lines maximum).
+        prompt = f"""Given the following conversation history, generate a brief therapeutic response (1-2 lines maximum).
 
 Conversation History:
 {context}
