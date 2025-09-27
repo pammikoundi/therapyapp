@@ -2,7 +2,7 @@ name: Deploy Backend to Google Cloud Run
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
     paths:
       - 'Backend/**'
       - 'docker/Dockerfile'
