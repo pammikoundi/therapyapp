@@ -124,7 +124,7 @@ jobs:
             --region=${{ env.REGION }} \
             --service-account=${{ secrets.CLOUD_RUN_SERVICE_ACCOUNT }} \
             --set-env-vars="ENVIRONMENT=demo,USE_SERVICE_ACCOUNT=true" \
-            --set-secrets=GEMINI_API_KEY=gemini-api-key:latest \
+            --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest \
             --allow-unauthenticated \
             --port=8080 \
             --memory=1Gi \
@@ -134,9 +134,17 @@ jobs:
             --concurrency=100 \
             --timeout=300
           
+          # Ensure the service allows unauthenticated access
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --member="allUsers" \
+            --role="roles/run.invoker"
+          
           # Get the service URL
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region=${{ env.REGION }} --format='value(status.url)')
           echo "SERVICE_URL=$SERVICE_URL" >> $GITHUB_OUTPUT
+          
+          echo "✅ Service deployed and configured for unauthenticated access"
 
       - name: Show service URL
         run: |
