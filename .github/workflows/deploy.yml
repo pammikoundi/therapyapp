@@ -134,11 +134,8 @@ jobs:
             --concurrency=100 \
             --timeout=300
           
-          # Ensure the service allows unauthenticated access
-          gcloud run services add-iam-policy-binding ${{ env.SERVICE }} \
-            --region=${{ env.REGION }} \
-            --member="allUsers" \
-            --role="roles/run.invoker"
+          # Note: IAM policy for unauthenticated access needs to be set manually:
+          # gcloud run services add-iam-policy-binding therapyapp-backend --region=us-central1 --member=allUsers --role=roles/run.invoker
           
           # Get the service URL
           SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region=${{ env.REGION }} --format='value(status.url)')
