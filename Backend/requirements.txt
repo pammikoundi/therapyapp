@@ -8,5 +8,5 @@ numpy
 pydantic-settings
 certifi
 python-multipart
-spacy
+#spacy
 google-generativeai

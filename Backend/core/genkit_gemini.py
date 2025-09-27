@@ -6,15 +6,16 @@ from core.config import settings
 # Configure the Google Generative AI client
 genai.configure(api_key=settings.gemini_api_key)
 
-# Initialize the Gemini Pro model
-model = genai.GenerativeModel('gemini-1.5-pro')
+# Initialize the Gemini 2.5 Flash model
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 async def generate_followup_question(history: List[dict]) -> str:
     """
     Generates a follow-up question based on the conversation history.
     """
-    context = "\n".join([msg["text"] for msg in history if "text" in msg])
-    prompt = f"""Given the following conversation history, generate a thoughtful follow-up question to help continue the therapeutic conversation:
+    try:
+        context = "\n".join([msg["text"] for msg in history if "text" in msg])
+        prompt = f"""Given the following conversation history, generate a thoughtful follow-up question to help continue the therapeutic conversation:
 
 Conversation History:
 {context}
@@ -27,11 +28,15 @@ Generate a follow-up question that:
 
 Follow-up question:"""
 
-    # Run the blocking call in a thread pool
-    loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(None, model.generate_content, prompt)
-    
-    return response.text
+        # Run the blocking call in a thread pool
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, model.generate_content, prompt)
+        
+        return response.text
+    except Exception as e:
+        print(f"Error generating follow-up question: {e}")
+        # Return a fallback question
+        return "Can you tell me more about how you're feeling right now?"
 
 async def summarize_text_flow(text: str) -> str:
     """
