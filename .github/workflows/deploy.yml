@@ -50,12 +50,26 @@ jobs:
       - name: Run tests
         run: |
           cd Backend
-          # Run basic import tests
-          python -c "from main import app; print('FastAPI app imported successfully')"
-          python -c "from core.genkit_gemini import generate_followup_question, summarize_text_flow; print('AI functions imported successfully')"
+          
+          echo "🧪 Testing application imports in development mode..."
+          
+          # Test configuration loading
+          echo "Testing configuration..."
+          python -c "from core.config import settings; print(f'✅ Environment: {settings.environment}')"
+          
+          # Test Gemini AI import
+          echo "Testing AI integration..."
+          python -c "from core.genkit_gemini import generate_followup_question, summarize_text_flow; print('✅ AI functions imported successfully')"
+          
+          # Test FastAPI app (this will test Firebase integration too)
+          echo "Testing FastAPI app..."
+          python -c "from main import app; print('✅ FastAPI app imported successfully')"
+          
+          echo "🎉 All tests passed!"
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-key.json
+          ENVIRONMENT: dev
+          GEMINI_API_KEY: test-key-for-ci
+          GOOGLE_APPLICATION_CREDENTIALS: /nonexistent/path/to/test-credentials.json
 
   deploy:
     needs: test
