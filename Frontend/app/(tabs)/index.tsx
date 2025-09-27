@@ -1,98 +1,130 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  SafeAreaView,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function ChatScreen() {
+  const [messages, setMessages] = useState([
+    {
+      id: '1',
+      text: "Hello! I'm Alex, your AI therapy companion. How are you feeling today?",
+      isUser: false,
+      timestamp: new Date(),
+    }
+  ]);
+  const [inputText, setInputText] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollViewRef = useRef(null);
 
-export default function HomeScreen() {
+  // ... rest of your chat logic
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+      <View style={{ 
+        paddingHorizontal: 20, 
+        paddingVertical: 16, 
+        borderBottomWidth: 1, 
+        borderBottomColor: '#E0E0E0',
+        backgroundColor: '#FFFFFF',
+        alignItems: 'center',
+      }}>
+        <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#333333' }}>
+          Alex - AI Therapist
+        </Text>
+        <Text style={{ fontSize: 14, color: '#666666', marginTop: 4 }}>
+          Always here to listen
+        </Text>
+      </View>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView 
+          ref={scrollViewRef}
+          style={{ flex: 1, padding: 16 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {messages.map((message) => (
+            <View key={message.id} style={[
+              {
+                maxWidth: '80%',
+                padding: 12,
+                borderRadius: 10,
+                marginBottom: 12,
+              },
+              message.isUser ? {
+                alignSelf: 'flex-end',
+                backgroundColor: '#007AFF',
+              } : {
+                alignSelf: 'flex-start',
+                backgroundColor: '#FFFFFF',
+                borderWidth: 1,
+                borderColor: '#E0E0E0',
+              }
+            ]}>
+              <Text style={{
+                fontSize: 16,
+                lineHeight: 20,
+                color: message.isUser ? '#FFFFFF' : '#333333',
+              }}>
+                {message.text}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+          padding: 16,
+          backgroundColor: '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: '#E0E0E0',
+        }}>
+          <TextInput
+            style={{
+              flex: 1,
+              borderWidth: 1,
+              borderColor: '#E0E0E0',
+              borderRadius: 10,
+              paddingHorizontal: 12,
+              paddingVertical: 12,
+              fontSize: 16,
+              backgroundColor: '#F5F5F5',
+              maxHeight: 100,
+            }}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Share your thoughts..."
+            multiline
+          />
+          <TouchableOpacity 
+            style={{
+              backgroundColor: inputText.trim() ? '#007AFF' : '#CCCCCC',
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              borderRadius: 10,
+              marginLeft: 12,
+            }}
+            onPress={() => {
+              if (!inputText.trim()) return;
+              // Add send message logic
+              setInputText('');
+            }}
+            disabled={!inputText.trim()}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
