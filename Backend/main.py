@@ -42,9 +42,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register authentication middleware
-# This handles Firebase token validation for all protected endpoints
-app.add_middleware(AuthMiddleware)
+# Authentication middleware disabled for demo purposes
+# All endpoints are now publicly accessible with a test user
+# app.add_middleware(AuthMiddleware)  # Commented out for demo
 
 # Include API routers with organized endpoints
 # Session management: conversation creation, message handling, AI assistance
@@ -88,8 +88,48 @@ async def root():
     Root endpoint providing basic API information.
     """
     return {
-        "message": "AI Therapy App Backend API",
+        "message": "AI Therapy App Backend API - Demo Mode",
         "version": "0.1.0",
+        "mode": "demo",
+        "authentication": "disabled",
+        "test_user": "demo-user-12345",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "endpoints": {
+            "sessions": "/session/",
+            "history": "/history/",
+            "statistics": "/statistics/",
+            "debug": "/session/debug/sessions"
+        }
+    }
+
+# Demo info endpoint
+@app.get("/demo-info", tags=["System"])
+async def demo_info():
+    """
+    Information about demo mode and available test endpoints.
+    """
+    return {
+        "demo_mode": True,
+        "description": "This is a demo instance of the therapy app backend",
+        "features": {
+            "authentication": "Disabled - all requests use test user",
+            "database": "Connected to Firebase/Firestore",
+            "ai_integration": "Google Gemini AI enabled",
+            "session_management": "Full session lifecycle supported",
+            "analytics": "Mood and emotion analysis from text"
+        },
+        "test_user": {
+            "uid": "demo-user-12345",
+            "email": "demo@therapyapp.com",
+            "name": "Demo User"
+        },
+        "quick_start": {
+            "1_create_session": "POST /session/",
+            "2_add_message": "POST /session/message",
+            "3_get_ai_question": "POST /session/generate-question?session_id=<id>",
+            "4_view_sessions": "GET /session/debug/sessions",
+            "5_get_statistics": "GET /statistics/"
+        },
+        "documentation": "/docs"
     }

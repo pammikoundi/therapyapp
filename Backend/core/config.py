@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     environment: str = "dev"  # Options: dev, staging, production
     
     # Firebase/Google Cloud configuration
-    google_application_credentials: str  # Path to service account JSON file
+    google_application_credentials: Optional[str] = None  # Path to service account JSON file
     
     # SSL configuration for HTTPS (optional in development)
     ssl_cert_file: Optional[str] = None  # Path to SSL certificate file
@@ -53,11 +53,15 @@ class Settings(BaseSettings):
         
     def is_development(self) -> bool:
         """Check if application is running in development mode."""
-        return self.environment.lower() == "dev"
+        return self.environment.lower() in ["dev", "development", "demo"]
         
     def is_production(self) -> bool:
         """Check if application is running in production mode."""
         return self.environment.lower() == "production"
+        
+    def is_demo(self) -> bool:
+        """Check if application is running in demo mode."""
+        return self.environment.lower() == "demo"
 
 
 # Global settings instance

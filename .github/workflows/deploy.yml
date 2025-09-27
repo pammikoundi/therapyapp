@@ -117,12 +117,13 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          # Deploy to Cloud Run with proper secret mounting
+          # Deploy to Cloud Run using service account authentication
+          # Cloud Run will automatically use the assigned service account for Firebase
           gcloud run deploy ${{ env.SERVICE }} \
             --image=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE }}/${{ env.SERVICE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --service-account=${{ secrets.CLOUD_RUN_SERVICE_ACCOUNT }} \
-            --set-env-vars=ENVIRONMENT=${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }} \
+            --set-env-vars="ENVIRONMENT=demo,USE_SERVICE_ACCOUNT=true" \
             --set-secrets=GEMINI_API_KEY=gemini-api-key:latest \
             --allow-unauthenticated \
             --port=8080 \

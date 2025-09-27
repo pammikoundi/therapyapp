@@ -35,68 +35,25 @@ async def get_current_user(authorization: str = Header(None)) -> Dict[str, Any]:
     """
     FastAPI dependency for user authentication and authorization.
     
-    This function serves as a dependency for protected endpoints, providing
-    user context by validating Firebase ID tokens or bypassing authentication
-    in development mode.
+    For demo purposes, this always returns a test user to make the API
+    easily accessible without authentication setup.
     
     Args:
-        authorization (str, optional): Authorization header containing Bearer token
+        authorization (str, optional): Authorization header (ignored in demo mode)
         
     Returns:
-        Dict[str, Any]: User information containing uid, email, and other claims
-        
-    Raises:
-        HTTPException: 401 if authentication fails or token is invalid
-        
-    Environment Behavior:
-        - Development (ENVIRONMENT=dev): Returns mock user data
-        - Production: Validates Firebase ID token
+        Dict[str, Any]: Test user information for demo purposes
     """
     
-    # Development mode: bypass authentication with mock user
-    if settings.is_development():
-        logger.debug("Development mode: bypassing authentication")
-        return {
-            "uid": "dev-user-123", 
-            "email": "dev@therapyapp.com", 
-            "name": "Development User",
-            "env": "development"
-        }
-
-    # Production mode: require valid Authorization header
-    if not authorization:
-        logger.warning("Missing Authorization header in production request")
-        raise HTTPException(
-            status_code=401, 
-            detail="Missing Authorization header. Please include Bearer token."
-        )
-
-    try:
-        # Parse Authorization header (format: "Bearer <token>")
-        scheme, token = authorization.split(" ", 1)
-        
-        if scheme.lower() != "bearer":
-            logger.warning(f"Invalid authentication scheme: {scheme}")
-            raise ValueError("Invalid authentication scheme. Use Bearer token.")
-        
-        # Verify Firebase ID token and extract user claims
-        decoded_token = auth_client.verify_id_token(token)
-        
-        logger.info(f"User authenticated successfully: {decoded_token.get('uid')}")
-        return decoded_token
-        
-    except ValueError as e:
-        logger.error(f"Token validation error: {e}")
-        raise HTTPException(
-            status_code=401, 
-            detail=f"Authentication failed: {str(e)}"
-        )
-    except Exception as e:
-        logger.error(f"Unexpected authentication error: {e}")
-        raise HTTPException(
-            status_code=401, 
-            detail="Invalid or expired token. Please re-authenticate."
-        )
+    # Demo mode: always return test user for easy demonstration
+    logger.debug("Demo mode: using test user for all requests")
+    return {
+        "uid": "demo-user-12345", 
+        "email": "demo@therapyapp.com", 
+        "name": "Demo User",
+        "demo_mode": True,
+        "environment": settings.environment
+    }
 
 
 def require_user_role(required_role: str):

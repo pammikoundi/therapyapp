@@ -34,25 +34,39 @@ logger = logging.getLogger(__name__)
 
 # Initialize Firebase services with error handling for different environments
 try:
-    # Check if we're in a testing environment or if credentials exist
-    if settings.is_development() and not os.path.exists(settings.google_application_credentials):
-        # Development mode without credentials - create mock services
-        logger.warning("Development mode: Firebase credentials not found, using mock services")
+    # Check if we should use Cloud Run's default service account
+    use_service_account = os.getenv('USE_SERVICE_ACCOUNT', 'false').lower() == 'true'
+    
+    if use_service_account:
+        # Cloud Run production mode - use default service account
+        logger.info("Using Cloud Run service account for Firebase authentication")
+        firebase_admin.initialize_app()
+        logger.info("Firebase Admin SDK initialized with Cloud Run service account")
         
-        # Create a mock Firebase app for development
-        try:
-            # Try to initialize with default credentials (for local dev)
-            firebase_admin.initialize_app()
-            logger.info("Firebase Admin SDK initialized with default credentials")
-        except Exception:
-            # If that fails, create a minimal mock setup
-            logger.warning("Could not initialize Firebase - some features will be limited in development")
-            
+    elif settings.is_development():
+        # Development mode - check for credentials file or use default
+        if hasattr(settings, 'google_application_credentials') and os.path.exists(settings.google_application_credentials):
+            # Use local service account file
+            cred = credentials.Certificate(settings.google_application_credentials)
+            firebase_admin.initialize_app(cred)
+            logger.info("Firebase Admin SDK initialized with local service account file")
+        else:
+            # Try default credentials or create mock setup
+            try:
+                firebase_admin.initialize_app()
+                logger.info("Firebase Admin SDK initialized with default credentials")
+            except Exception as dev_e:
+                logger.warning(f"Could not initialize Firebase with default credentials: {dev_e}")
+                logger.warning("Running in mock mode - some features will be limited")
+                
     else:
-        # Production/staging mode - require proper credentials
-        cred = credentials.Certificate(settings.google_application_credentials)
-        firebase_admin.initialize_app(cred)
-        logger.info("Firebase Admin SDK initialized successfully with service account")
+        # Fallback to credential file for other environments
+        if hasattr(settings, 'google_application_credentials'):
+            cred = credentials.Certificate(settings.google_application_credentials)
+            firebase_admin.initialize_app(cred)
+            logger.info("Firebase Admin SDK initialized with credential file")
+        else:
+            raise ValueError("No Firebase credentials configuration found")
         
 except Exception as e:
     logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
