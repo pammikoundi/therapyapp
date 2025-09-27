@@ -70,12 +70,13 @@ try:
         
 except Exception as e:
     logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
-    if not settings.is_development():
+    if settings.environment.lower() in ["dev", "development", "demo"]:
+        # In development/demo, log the error but continue
+        logger.warning(f"Continuing in {settings.environment} mode without Firebase services")
+        logger.info("API will use mock data for demonstration purposes")
+    else:
         # In production, this is a critical error
         raise
-    else:
-        # In development, log the error but continue
-        logger.warning("Continuing in development mode without Firebase services")
 
 try:
     # Initialize Firestore client for database operations
@@ -83,10 +84,10 @@ try:
     logger.info("Firestore client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Firestore client: {e}")
-    if settings.is_development():
-        # Create a mock db object for development
+    if settings.is_development() or settings.environment.lower() == "demo":
+        # Create a mock db object for development/demo
         db = None
-        logger.warning("Using mock database in development mode")
+        logger.warning(f"Using mock database in {settings.environment} mode - Firestore not available")
     else:
         raise
 
@@ -96,9 +97,9 @@ try:
     logger.info("Firebase Auth client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Firebase Auth client: {e}")
-    if settings.is_development():
+    if settings.is_development() or settings.environment.lower() == "demo":
         auth_client = None
-        logger.warning("Using mock auth in development mode")
+        logger.warning(f"Using mock auth in {settings.environment} mode - Firebase Auth not available")
     else:
         raise
 
