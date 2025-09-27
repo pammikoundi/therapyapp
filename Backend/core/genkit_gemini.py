@@ -6,8 +6,8 @@ from core.config import settings
 # Configure the Google Generative AI client
 genai.configure(api_key=settings.gemini_api_key)
 
-# Initialize the Gemini Pro model
-model = genai.GenerativeModel('gemini-pro')
+# Initialize the Gemini 2.5 Flash model
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 async def generate_followup_question(history: List[dict]) -> str:
     """
