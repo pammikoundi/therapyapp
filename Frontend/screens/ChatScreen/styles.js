@@ -1,102 +1,167 @@
-export const ChatStyles = StyleSheet.create({
-  container: {
-    ...CommonStyles.container,
-  },
-  header: {
-    ...CommonStyles.header,
+const AudioChatStyles = {
+  // Center container for session start
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 40,
   },
-  headerTitle: {
-    ...CommonStyles.headerTitle,
+
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Colors.primary,
     textAlign: 'center',
+    marginBottom: 10,
   },
-  headerSubtitle: {
-    fontSize: Typography.bodySmall,
+
+  welcomeSubtitle: {
+    fontSize: 16,
     color: Colors.textSecondary,
     textAlign: 'center',
-    marginTop: Spacing.xs,
+    marginBottom: 40,
+    lineHeight: 24,
   },
-  messagesContainer: {
-    flex: 1,
-    backgroundColor: Colors.backgroundPrimary,
-  },
-  messagesContent: {
-    padding: Spacing.lg,
-    paddingBottom: Spacing.xl,
-  },
-  messageBubble: {
-    maxWidth: '80%',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    marginBottom: Spacing.md,
-    ...Shadows.light,
-  },
-  userMessage: {
-    alignSelf: 'flex-end',
+
+  startSessionButton: {
     backgroundColor: Colors.primary,
+    paddingHorizontal: 40,
+    paddingVertical: 15,
+    borderRadius: 25,
+    elevation: 3,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
-  aiMessage: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.backgroundSecondary,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+
+  startSessionButtonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
-  messageText: {
-    fontSize: Typography.body,
-    lineHeight: 20,
-  },
-  userMessageText: {
-    color: Colors.textWhite,
-  },
-  aiMessageText: {
-    color: Colors.textPrimary,
-  },
-  messageTime: {
-    fontSize: Typography.caption,
-    marginTop: Spacing.xs,
-  },
-  userMessageTime: {
-    color: Colors.textWhite,
-    opacity: 0.8,
-    textAlign: 'right',
-  },
-  aiMessageTime: {
-    color: Colors.textLight,
-  },
-  inputContainer: {
+
+  // Status indicators
+  statusContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: Spacing.lg,
-    backgroundColor: Colors.backgroundSecondary,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
+    alignItems: 'center',
+    marginTop: 5,
   },
-  textInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: BorderRadius.lg,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    fontSize: Typography.body,
-    color: Colors.textPrimary,
-    backgroundColor: Colors.backgroundPrimary,
-    maxHeight: 100,
+
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.textSecondary,
+    marginRight: 8,
   },
-  sendButton: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    marginLeft: Spacing.md,
+
+  statusActive: {
+    backgroundColor: '#4CAF50',
+  },
+
+  endSessionButton: {
+    position: 'absolute',
+    right: 15,
+    top: 15,
+    backgroundColor: '#FF6B6B',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 15,
+  },
+
+  endSessionButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // Audio controls
+  audioControlsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: Colors.background,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
   },
-  sendButtonDisabled: {
-    backgroundColor: Colors.borderMedium,
+
+  micButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
   },
-  sendButtonText: {
-    color: Colors.textWhite,
-    fontWeight: Typography.weightSemiBold,
-    fontSize: Typography.body,
+
+  micButtonActive: {
+    backgroundColor: '#FF6B6B',
+    shadowColor: '#FF6B6B',
   },
-});
+
+  micButtonDisabled: {
+    backgroundColor: Colors.textSecondary,
+    shadowColor: Colors.textSecondary,
+  },
+
+  micButtonText: {
+    fontSize: 30,
+  },
+
+  stopSpeechButton: {
+    marginLeft: 20,
+    backgroundColor: '#FF9800',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+
+  stopSpeechButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Transcript styles
+  transcriptBubble: {
+    opacity: 0.7,
+    borderStyle: 'dashed',
+  },
+
+  transcriptText: {
+    fontStyle: 'italic',
+  },
+
+  // Enhanced header
+  header: {
+    ...ChatStyles.header, // Extend existing header styles
+    paddingBottom: 15,
+  },
+
+  headerTitle: {
+    ...ChatStyles.headerTitle, // Extend existing title styles
+    fontSize: 20,
+  },
+
+  headerSubtitle: {
+    ...ChatStyles.headerSubtitle, // Extend existing subtitle styles
+    fontSize: 14,
+  },
+};
+
+// Merge with existing ChatStyles
+const EnhancedChatStyles = {
+  ...ChatStyles,
+  ...AudioChatStyles,
+};
+
+export default EnhancedChatStyles;
