@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.core.firebase import db
+from core.firebase import db
 
 router = APIRouter()
 

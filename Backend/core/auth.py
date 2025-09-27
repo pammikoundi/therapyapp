@@ -1,6 +1,6 @@
 from fastapi import Header, HTTPException
-from app.core.config import settings
-from app.core.firebase import auth_client
+from core.config import settings
+from core.firebase import auth_client
 
 async def get_current_user(authorization: str = Header(None)):
     """

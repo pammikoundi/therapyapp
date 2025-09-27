@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
-from app.models.schemas import Message
-from app.core.firebase import db, firestore
-from app.core.auth import get_current_user
+from models.schemas import Message
+from core.firebase import db, firestore
+from core.auth import get_current_user
 from datetime import datetime
 
 router = APIRouter()
@@ -10,7 +10,7 @@ router = APIRouter()
 async def start_session(user=Depends(get_current_user)):
     session_ref = db.collection("sessions").document()
     session_ref.set({
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(),
         "user_id": user["uid"],
         "messages": []
     })
@@ -27,7 +27,7 @@ async def add_user_message(message: Message, user=Depends(get_current_user)):
     session_ref.update({
         "messages": firestore.ArrayUnion([{
             "text": message.text,
-            "time": datetime.utcnow(),
+            "time": datetime.now(),
             "user_id": user["uid"]
         }])
     })

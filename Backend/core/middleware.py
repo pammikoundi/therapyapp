@@ -1,8 +1,8 @@
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from app.core.config import settings
-from app.core.firebase import auth_client
+from core.config import settings
+from core.firebase import auth_client
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
