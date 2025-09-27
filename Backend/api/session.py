@@ -44,53 +44,99 @@ def analyze_messages(messages: List[dict]) -> Dict[str, Any]:
     Analyze therapy session messages for mood, emotions, and intensity patterns.
     
     This function processes conversation messages to extract psychological insights
-    including mood indicators, emotional patterns, and conversation intensity.
-    Currently uses placeholder logic - can be enhanced with NLP analysis.
+    from the actual text content using keyword analysis and sentiment indicators.
     
     Args:
         messages (List[dict]): List of message objects from the session
         
     Returns:
         Dict[str, Any]: Analytics containing:
-            - mood_counts: Frequency of different moods
+            - mood_counts: Frequency of different moods detected
             - avg_intensity: Average emotional intensity (0-10 scale)
-            - emotion_counts: Frequency of different emotions
-            
-    Note:
-        This is a simplified implementation. In production, this could use
-        NLP libraries like spaCy or cloud services for sentiment analysis.
+            - emotion_counts: Frequency of different emotions detected
+            - message_analysis: Breakdown of analysis
     """
     logger.info(f"Analyzing {len(messages)} messages for psychological insights")
     
-    # Extract mood indicators from messages (if present)
-    moods = [m.get("mood") for m in messages if m.get("mood")]
+    # Define mood and emotion keywords for basic sentiment analysis
+    mood_keywords = {
+        "happy": ["happy", "joy", "excited", "great", "wonderful", "amazing", "love", "fantastic", "thrilled"],
+        "sad": ["sad", "depressed", "down", "unhappy", "miserable", "tearful", "crying", "grieving"],
+        "anxious": ["anxious", "worried", "nervous", "stress", "panic", "fear", "scared", "overwhelmed"],
+        "angry": ["angry", "mad", "furious", "irritated", "frustrated", "rage", "annoyed"],
+        "neutral": ["okay", "fine", "normal", "regular", "usual"],
+        "confused": ["confused", "lost", "uncertain", "unclear", "puzzled", "bewildered"]
+    }
     
-    # Extract intensity scores (emotional intensity on 0-10 scale)
-    intensities = [m.get("intensity", 0) for m in messages if "intensity" in m]
+    emotion_keywords = {
+        "joy": ["joy", "happiness", "delight", "pleasure", "bliss", "elation"],
+        "sadness": ["sadness", "sorrow", "grief", "melancholy", "despair"],
+        "fear": ["fear", "terror", "dread", "phobia", "fright", "alarm"],
+        "anger": ["anger", "fury", "wrath", "resentment", "hostility"],
+        "surprise": ["surprise", "shock", "amazement", "astonishment"],
+        "disgust": ["disgust", "revulsion", "loathing", "repulsion"]
+    }
     
-    # Extract emotion tags from messages
-    emotions = [m.get("emotion") for m in messages if m.get("emotion")]
-    
-    # Calculate average emotional intensity
-    avg_intensity = statistics.mean(intensities) if intensities else 0
-    
-    # Count mood occurrences
     mood_counts = {}
-    for mood in moods:
-        mood_counts[mood] = mood_counts.get(mood, 0) + 1
-        
-    # Count emotion occurrences
     emotion_counts = {}
-    for emotion in emotions:
-        emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
+    intensities = []
+    user_messages = [m for m in messages if m.get("role") == "user"]
+    
+    logger.info(f"Analyzing {len(user_messages)} user messages out of {len(messages)} total messages")
+    
+    for message in user_messages:
+        text = message.get("text", "").lower()
+        
+        if not text.strip():
+            continue
+            
+        # Calculate basic intensity based on text characteristics
+        intensity = 5  # Base intensity
+        
+        # Adjust intensity based on text features
+        if "!" in text:
+            intensity += 1
+        if "?" in text:
+            intensity += 0.5
+        if any(word in text for word in ["very", "extremely", "really", "so", "too"]):
+            intensity += 1
+        if len(text) > 100:  # Longer messages might indicate more emotional content
+            intensity += 0.5
+        
+        # Cap intensity at 10
+        intensity = min(10, intensity)
+        intensities.append(intensity)
+        
+        # Analyze mood keywords
+        for mood, keywords in mood_keywords.items():
+            if any(keyword in text for keyword in keywords):
+                mood_counts[mood] = mood_counts.get(mood, 0) + 1
+        
+        # Analyze emotion keywords
+        for emotion, keywords in emotion_keywords.items():
+            if any(keyword in text for keyword in keywords):
+                emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
+    
+    # Calculate average intensity
+    avg_intensity = statistics.mean(intensities) if intensities else 5.0
+    
+    # If no moods detected, assign neutral
+    if not mood_counts and user_messages:
+        mood_counts["neutral"] = len(user_messages)
     
     analytics = {
         "mood_counts": mood_counts,
-        "avg_intensity": avg_intensity,
-        "emotion_counts": emotion_counts
+        "avg_intensity": round(avg_intensity, 2),
+        "emotion_counts": emotion_counts,
+        "message_analysis": {
+            "total_messages": len(messages),
+            "user_messages": len(user_messages),
+            "analyzed_messages": len([m for m in user_messages if m.get("text", "").strip()]),
+            "avg_message_length": round(sum(len(m.get("text", "")) for m in user_messages) / len(user_messages), 2) if user_messages else 0
+        }
     }
     
-    logger.info(f"Session analysis complete: {len(mood_counts)} moods, avg intensity {avg_intensity:.2f}")
+    logger.info(f"Session analysis complete: {len(mood_counts)} moods detected, {len(emotion_counts)} emotions, avg intensity {avg_intensity:.2f}")
     return analytics
 
 async def summarize_text(messages: List[dict]):
@@ -199,3 +245,93 @@ async def add_message(message: Message, user=Depends(get_current_user)):
         "messages": ArrayUnion([msg_data])
     })
     return {"status": "saved", "message": message.text, "role": role, "user": user, "reopened": summary_doc.exists}
+
+
+@router.get("/debug/sessions")
+async def debug_get_all_sessions(user=Depends(get_current_user)):
+    """
+    Debug endpoint to list all sessions for the current user.
+    Helps with troubleshooting session creation and retrieval.
+    """
+    try:
+        if db is None:
+            return {
+                "sessions": [
+                    {"session_id": "mock-session-1", "created_at": "2024-01-01", "messages": []},
+                    {"session_id": "mock-session-2", "created_at": "2024-01-02", "messages": []}
+                ],
+                "status": "development_mode"
+            }
+        
+        sessions_query = db.collection("sessions").where("user_id", "==", user["uid"])
+        sessions = list(sessions_query.stream())
+        
+        session_list = []
+        for session_doc in sessions:
+            session_data = session_doc.to_dict()
+            session_list.append({
+                "session_id": session_doc.id,
+                "created_at": str(session_data.get("created_at")),
+                "message_count": len(session_data.get("messages", [])),
+                "messages": session_data.get("messages", [])[:3]  # Show first 3 messages
+            })
+        
+        return {
+            "sessions": session_list,
+            "total_sessions": len(session_list),
+            "user_id": user["uid"],
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        return {"error": str(e), "status": "error"}
+
+
+@router.post("/debug/create-test-session")
+async def debug_create_test_session(user=Depends(get_current_user)):
+    """
+    Debug endpoint to create a test session with sample messages.
+    Helps test the complete session workflow including analysis.
+    """
+    try:
+        if db is None:
+            return {
+                "session_id": "mock-test-session",
+                "messages_added": 3,
+                "status": "development_mode"
+            }
+        
+        # Create session
+        session_ref = db.collection("sessions").document()
+        session_ref.set({
+            "created_at": datetime.now(),
+            "user_id": user["uid"],
+            "messages": []
+        })
+        
+        # Add test messages
+        test_messages = [
+            {"text": "I've been feeling really anxious about work lately.", "time": datetime.now(), "role": "user", "user_id": user["uid"]},
+            {"text": "That sounds stressful. Can you tell me more about what specifically is causing this anxiety?", "time": datetime.now(), "role": "generated"},
+            {"text": "I keep worrying that I'm not doing well enough and my boss will be disappointed.", "time": datetime.now(), "role": "user", "user_id": user["uid"]},
+            {"text": "It's understandable to want to do well at work. These feelings of worry are valid.", "time": datetime.now(), "role": "generated"},
+            {"text": "Sometimes I feel overwhelmed and can't sleep because I'm thinking about work.", "time": datetime.now(), "role": "user", "user_id": user["uid"]}
+        ]
+        
+        for msg in test_messages:
+            session_ref.update({
+                "messages": ArrayUnion([msg])
+            })
+        
+        return {
+            "session_id": session_ref.id,
+            "messages_added": len(test_messages),
+            "test_messages": test_messages,
+            "status": "success",
+            "next_step": f"Try closing this session: POST /session/close?session_id={session_ref.id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creating test session: {e}")
+        return {"error": str(e), "status": "error"}
