@@ -321,13 +321,15 @@ async def debug_create_test_session(user=Depends(get_current_user)):
             "messages": []
         })
         
-        # Add test messages
+        # Add test messages with specific details for AI to reference
         test_messages = [
-            {"text": "I've been feeling really anxious about work lately.", "time": datetime.now(), "role": "user", "user_id": user["uid"]},
-            {"text": "That sounds stressful. Can you tell me more about what specifically is causing this anxiety?", "time": datetime.now(), "role": "generated"},
-            {"text": "I keep worrying that I'm not doing well enough and my boss will be disappointed.", "time": datetime.now(), "role": "user", "user_id": user["uid"]},
-            {"text": "It's understandable to want to do well at work. These feelings of worry are valid.", "time": datetime.now(), "role": "generated"},
-            {"text": "Sometimes I feel overwhelmed and can't sleep because I'm thinking about work.", "time": datetime.now(), "role": "user", "user_id": user["uid"]}
+            {"text": "I've been feeling really anxious about my new marketing project at work.", "time": datetime.now(), "role": "user", "user_id": user["uid"]},
+            {"text": "That sounds stressful. Can you tell me more about this marketing project?", "time": datetime.now(), "role": "generated"},
+            {"text": "It's a big campaign for our biggest client, Johnson & Co. My boss Sarah said it's really important.", "time": datetime.now(), "role": "user", "user_id": user["uid"]},
+            {"text": "I understand. Working on important projects can feel overwhelming.", "time": datetime.now(), "role": "generated"},
+            {"text": "The deadline is next Friday and I'm worried I won't finish in time. I've been staying up until 2am working on it.", "time": datetime.now(), "role": "user", "user_id": user["uid"]},
+            {"text": "That sounds exhausting. How are you managing the stress?", "time": datetime.now(), "role": "generated"},
+            {"text": "Not well. I had a panic attack yesterday during the team meeting about the project.", "time": datetime.now(), "role": "user", "user_id": user["uid"]}
         ]
         
         for msg in test_messages:

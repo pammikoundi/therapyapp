@@ -14,7 +14,15 @@ async def generate_followup_question(history: List[dict]) -> str:
     Generates a follow-up question based on the conversation history.
     """
     try:
-        context = "\n".join([msg["text"] for msg in history if "text" in msg])
+        # Extract conversation context with speaker roles for better understanding
+        context_parts = []
+        for msg in history:
+            if "text" in msg and msg["text"].strip():
+                role = msg.get("role", "user")
+                speaker = "You" if role == "user" else "Therapist"
+                context_parts.append(f"{speaker}: {msg['text']}")
+        
+        context = "\n".join(context_parts)
     prompt = f"""Given the following conversation history, generate a brief therapeutic response (1-2 lines maximum).
 
 Conversation History:
@@ -23,9 +31,11 @@ Conversation History:
 Your response should be:
 - Very short (1-2 lines only)
 - Either a concise follow-up question OR a supportive statement
+- Reference specific details from the conversation when appropriate (e.g., "How is your project going?", "How are things with your boss?", "Is work still stressing you?")
+- Show that you're actively listening by mentioning things they've shared
+- Sometimes just acknowledge with statements like "I understand", "I hear you", "That sounds difficult"
+- Make it personal and connected to what they've actually said
 - Empathetic and appropriate for therapy
-- Sometimes just acknowledge with statements like "I understand", "I hear you", "That sounds difficult", "I'm here to listen"
-- Other times ask a brief question to explore deeper
 
 Response:"""
 
