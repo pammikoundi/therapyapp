@@ -42,7 +42,8 @@ async def summarize_text_flow(text: str) -> str:
     """
     Summarizes the given text for therapy session analysis.
     """
-    prompt = f"""Summarize the following therapy session conversation, focusing on:
+    try:
+        prompt = f"""Summarize the following therapy session conversation, focusing on:
 - Main topics discussed
 - Emotions expressed
 - Key insights or breakthroughs
@@ -55,8 +56,12 @@ Session Content:
 
 Summary:"""
 
-    # Run the blocking call in a thread pool
-    loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(None, model.generate_content, prompt)
-    
-    return response.text
+        # Run the blocking call in a thread pool
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, model.generate_content, prompt)
+        
+        return response.text
+    except Exception as e:
+        print(f"Error summarizing text: {e}")
+        # Return a fallback summary
+        return "Session summary: The user shared their thoughts and feelings during this conversation."

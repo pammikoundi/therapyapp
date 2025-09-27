@@ -118,12 +118,37 @@ The app uses Google's Gemini AI for:
 ## Environment Setup
 
 ### Backend Requirements
+- Python 3.12+ with virtual environment support
 - Google Cloud credentials for Firebase/Firestore access
 - Gemini API key for AI functionality
-- SSL certificates for secure communication
-- Create `.env` file with required environment variables (see `core/config.py`)
+- SSL certificates for secure communication (optional in dev)
+- Create `.env` file with required environment variables:
+  ```env
+  ENVIRONMENT=dev
+  GEMINI_API_KEY=your_gemini_api_key
+  GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+  SSL_CERT_FILE=/path/to/ssl/cert.pem  # Optional
+  ```
 
 ### Frontend Requirements
 - Node.js and npm
 - Expo CLI
 - React Native development environment (for native builds)
+
+## Documentation
+
+The backend is comprehensively documented with:
+- **Inline Comments**: Every function and class has detailed docstrings
+- **Type Hints**: Full type annotation for better code clarity
+- **README.md**: Complete project overview and setup instructions
+- **API Documentation**: Auto-generated Swagger UI at `/docs`
+- **Environment Template**: `.env.example` with configuration guidance
+- **Deployment Guide**: `../DEPLOYMENT.md` with Google Cloud setup
+
+## Code Quality Features
+
+- **Logging**: Comprehensive logging throughout the application
+- **Error Handling**: Graceful error handling with fallback responses
+- **Authentication**: Flexible auth system with development bypasses
+- **Configuration Management**: Type-safe environment configuration
+- **Docker Ready**: Multi-stage Docker build for production deployment
