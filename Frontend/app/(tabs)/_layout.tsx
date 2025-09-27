@@ -14,7 +14,7 @@ function CustomDrawerContent(props: any) {
   const menuItems = [
     { name: 'index', title: 'Chat', emoji: '💬', route: '/' },
     { name: 'history', title: 'History', emoji: '📚', route: '/history' },
-    { name: 'progress', title: 'Progress', emoji: '📊', route: '/progress' },
+    { name: 'statistics', title: 'Statistics', emoji: '📊', route: '/statistics' },
     { name: 'settings', title: 'Settings', emoji: '⚙️', route: '/settings' },
   ];
 
