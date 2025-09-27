@@ -195,6 +195,13 @@ async def close_session(session_id: str, user=Depends(get_current_user)):
 
 @router.post("/generate-question")
 async def generate_question(session_id: str, user=Depends(get_current_user)):
+    """
+    Generate a brief therapeutic response (1-2 lines).
+    
+    This endpoint generates either a supportive statement or a concise follow-up
+    question based on the conversation history. Responses are kept short and
+    therapeutic, including acknowledgments like 'I understand' or brief questions.
+    """
     session_ref = db.collection("sessions").document(session_id)
     session = session_ref.get()
     if not session.exists:
@@ -203,8 +210,12 @@ async def generate_question(session_id: str, user=Depends(get_current_user)):
     if not session_data:
         raise HTTPException(status_code=404, detail="Session data not found")
     history = session_data.get("messages", [])
-    question = await generate_followup_question(history)
-    return {"question": question}
+    response = await generate_followup_question(history)
+    return {
+        "response": response,
+        "type": "therapeutic_response",
+        "note": "This may be a supportive statement or a brief question"
+    }
 
 @router.post("/")
 async def start_session(user=Depends(get_current_user)):

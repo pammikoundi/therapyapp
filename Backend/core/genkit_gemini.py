@@ -15,18 +15,19 @@ async def generate_followup_question(history: List[dict]) -> str:
     """
     try:
         context = "\n".join([msg["text"] for msg in history if "text" in msg])
-        prompt = f"""Given the following conversation history, generate a thoughtful follow-up question to help continue the therapeutic conversation:
+    prompt = f"""Given the following conversation history, generate a brief therapeutic response (1-2 lines maximum).
 
 Conversation History:
 {context}
 
-Generate a follow-up question that:
-- Shows empathy and understanding
-- Encourages deeper reflection
-- Helps explore emotions or thoughts
-- Is appropriate for a therapy session
+Your response should be:
+- Very short (1-2 lines only)
+- Either a concise follow-up question OR a supportive statement
+- Empathetic and appropriate for therapy
+- Sometimes just acknowledge with statements like "I understand", "I hear you", "That sounds difficult", "I'm here to listen"
+- Other times ask a brief question to explore deeper
 
-Follow-up question:"""
+Response:"""
 
         # Run the blocking call in a thread pool
         loop = asyncio.get_event_loop()
@@ -35,8 +36,8 @@ Follow-up question:"""
         return response.text
     except Exception as e:
         print(f"Error generating follow-up question: {e}")
-        # Return a fallback question
-        return "Can you tell me more about how you're feeling right now?"
+        # Return a short, supportive fallback response
+        return "I'm here to listen. How are you feeling?"
 
 async def summarize_text_flow(text: str) -> str:
     """

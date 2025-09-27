@@ -127,7 +127,7 @@ async def demo_info():
         "quick_start": {
             "1_create_session": "POST /session/",
             "2_add_message": "POST /session/message",
-            "3_get_ai_question": "POST /session/generate-question?session_id=<id>",
+            "3_get_ai_response": "POST /session/generate-question?session_id=<id> (generates brief supportive responses)",
             "4_view_sessions": "GET /session/debug/sessions",
             "5_get_statistics": "GET /statistics/"
         },
