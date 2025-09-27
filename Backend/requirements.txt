@@ -3,10 +3,9 @@ uvicorn
 firebase-admin
 google-cloud-firestore
 google-cloud-storage
-openai-whisper
-websockets
 scipy
 numpy
 pydantic-settings
 certifi
 python-multipart
+spacy
