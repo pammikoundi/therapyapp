@@ -27,6 +27,8 @@ const LiveAudioChatScreen = ({ navigation }) => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  // live conversation latch (one-click to start a continuous listen session)
+  const [isLatched, setIsLatched] = useState(false);
   
   // Messages and UI
   const [messages, setMessages] = useState([]);
@@ -43,7 +45,15 @@ const LiveAudioChatScreen = ({ navigation }) => {
   const ttsHandlersRef = useRef({});
   const webRecognitionRef = useRef(null);
   const webUtteranceRef = useRef(null);
+  const webVoiceRef = useRef(null);
+  const webOnResultRef = useRef(null);
+  const webOnErrorRef = useRef(null);
+  const webOnEndRef = useRef(null);
   const voiceRef = useRef(null);
+  const pauseRecognitionRef = useRef(false);
+  const pendingRestartRef = useRef(false);
+  const restartAttemptsRef = useRef(0);
+  const lastRestartRef = useRef(0);
   const isWeb = Platform.OS === 'web';
 
   // Initialize TTS and Voice Recognition
@@ -52,6 +62,29 @@ const LiveAudioChatScreen = ({ navigation }) => {
     if (isWeb) {
       // Nothing synchronous needed here; initializeVoice will set up recognition instance
       initializeVoice();
+      // choose a high-quality web voice if available
+      try {
+        const pickWebVoice = () => {
+          try {
+            const voices = window.speechSynthesis.getVoices() || [];
+            // prefer voices with Google/Neural/WaveNet in name and en-US
+            let chosen = voices.find(v => /google|neural|wave(net)?/i.test(v.name) && /en[-_]?US|en/i.test(v.lang));
+            if (!chosen) chosen = voices.find(v => /en[-_]?US|en/i.test(v.lang));
+            if (!chosen && voices.length > 0) chosen = voices[0];
+            webVoiceRef.current = chosen || null;
+          } catch (e) {
+            webVoiceRef.current = null;
+          }
+        };
+
+        // voices may load asynchronously
+        if (window.speechSynthesis && window.speechSynthesis.getVoices().length === 0) {
+          window.speechSynthesis.onvoiceschanged = pickWebVoice;
+        }
+        pickWebVoice();
+      } catch (e) {
+        webVoiceRef.current = null;
+      }
 
       return () => {
         // cleanup web recognition
@@ -88,9 +121,33 @@ const LiveAudioChatScreen = ({ navigation }) => {
         voiceRef.current = null;
       }
 
-      const onTtsStart = () => setIsSpeaking(true);
-      const onTtsFinish = () => setIsSpeaking(false);
-      const onTtsCancel = () => setIsSpeaking(false);
+      const onTtsStart = () => {
+        setIsSpeaking(true);
+        pauseRecognitionRef.current = true;
+        // stop any ongoing recognition
+        try {
+          if (isWeb) {
+            const rec = webRecognitionRef.current;
+            if (rec && rec.stop) try { rec.stop(); } catch (e) {}
+          } else {
+            if (voiceRef.current && voiceRef.current.stop) voiceRef.current.stop();
+          }
+        } catch (e) {}
+      };
+
+      const onTtsFinish = () => {
+        setIsSpeaking(false);
+        pauseRecognitionRef.current = false;
+        // resume recognition if session is active
+        try {
+          if (isSessionActive) attemptRestartRecognition();
+        } catch (e) {}
+      };
+
+      const onTtsCancel = () => {
+        setIsSpeaking(false);
+        pauseRecognitionRef.current = false;
+      };
 
       ttsHandlersRef.current = { onTtsStart, onTtsFinish, onTtsCancel };
 
@@ -100,6 +157,21 @@ const LiveAudioChatScreen = ({ navigation }) => {
             NativeTts.setDefaultLanguage && NativeTts.setDefaultLanguage('en-US');
             NativeTts.setDefaultRate && NativeTts.setDefaultRate(0.5);
             NativeTts.setDefaultPitch && NativeTts.setDefaultPitch(1.0);
+            // try to pick a higher quality native voice when available
+            try {
+              if (NativeTts.voices) {
+                NativeTts.voices().then((vs) => {
+                  const list = Array.isArray(vs) ? vs : [];
+                  let preferred = list.find(v => /neo|neural|google|wave(net)?/i.test(v.name) && /en[-_]?US|en/i.test(v.language || v.lang || ''));
+                  if (!preferred) preferred = list.find(v => /en[-_]?US|en/i.test(v.language || v.lang || ''));
+                  if (preferred && NativeTts.setDefaultVoice) {
+                    NativeTts.setDefaultVoice(preferred.id || preferred.voiceId || preferred.name);
+                  }
+                }).catch(() => {});
+              }
+            } catch (e) {
+              // ignore voice selection errors
+            }
           } catch (e) {
             console.log('TTS config failed', e);
           }
@@ -162,6 +234,69 @@ const LiveAudioChatScreen = ({ navigation }) => {
     }
   };
 
+  // Attempt to restart recognition with a small exponential backoff to avoid tight restart loops
+  const attemptRestartRecognition = () => {
+    try {
+      if (pauseRecognitionRef.current) return;
+      if (!isSessionActive) return;
+
+      const now = Date.now();
+      const attempts = restartAttemptsRef.current || 0;
+      const delay = Math.min(200 * Math.pow(2, attempts), 2000); // 200ms, 400ms, 800ms, ... cap 2000ms
+
+      // prevent too-frequent restarts
+      if (lastRestartRef.current && now - lastRestartRef.current < 150) return;
+
+      restartAttemptsRef.current = attempts + 1;
+      setTimeout(async () => {
+        try {
+          if (isWeb) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (SpeechRecognition) {
+              const r = new SpeechRecognition();
+              r.lang = 'en-US';
+              r.interimResults = true;
+              r.continuous = true;
+              r.maxAlternatives = 1;
+              r.onstart = () => { setIsListening(true); animateMicrophone(); };
+              // use persisted handlers if available
+              r.onresult = webOnResultRef.current || ((e) => {});
+              r.onerror = webOnErrorRef.current || ((e) => {});
+              r.onend = webOnEndRef.current || ((e) => {});
+              webRecognitionRef.current = r;
+              try { r.start(); }
+              catch (e) { console.error('Failed to start restarted web recognition', e); }
+            }
+          } else {
+            const V = voiceRef.current;
+            if (V && V.start) {
+              try { await V.start('en-US'); }
+              catch (e) { console.error('Failed to start restarted native voice', e); }
+            }
+          }
+          // success — reset attempts
+          restartAttemptsRef.current = 0;
+          lastRestartRef.current = Date.now();
+        } catch (e) {
+          console.error('AttemptRestartRecognition failed', e);
+        }
+      }, delay);
+      // If we've retried several times without success, as a fallback call startListening()
+      if ((restartAttemptsRef.current || 0) >= 3) {
+        try {
+          console.log('Fallback: calling startListening directly after multiple attempts');
+          startListening();
+          restartAttemptsRef.current = 0;
+          lastRestartRef.current = Date.now();
+        } catch (e) {
+          console.error('Fallback startListening failed', e);
+        }
+      }
+    } catch (e) {
+      console.error('attemptRestartRecognition error', e);
+    }
+  };
+
   // Voice Recognition Event Handlers
   const onSpeechStart = () => {
     setIsListening(true);
@@ -170,8 +305,31 @@ const LiveAudioChatScreen = ({ navigation }) => {
   };
 
   const onSpeechEnd = () => {
-    setIsListening(false);
+    // If paused by TTS, do not auto-restart here; speakMessage will resume when done
     stopMicrophoneAnimation();
+    if (pauseRecognitionRef.current) {
+      setIsListening(false);
+      return;
+    }
+
+    // If latched, automatically restart listening to maintain a continuous conversation
+    if (isLatched) {
+      // restart after a short pause to avoid race conditions
+      setTimeout(async () => {
+        try {
+          const V = voiceRef.current;
+          if (V && V.start) {
+            await V.start('en-US');
+            setIsListening(true);
+            animateMicrophone();
+          }
+        } catch (e) {
+          console.error('Failed to restart native voice after end:', e);
+        }
+      }, 300);
+    } else {
+      setIsListening(false);
+    }
   };
 
   const onSpeechResults = (event) => {
@@ -268,8 +426,20 @@ const LiveAudioChatScreen = ({ navigation }) => {
   };
 
   const endSession = async () => {
-    if (!sessionId) return;
-    
+    // If there's no session id, still perform cleanup and close the screen
+    if (!sessionId) {
+      try {
+        // stop any TTS or recognition
+        try { if (ttsRef.current && ttsRef.current.stop) ttsRef.current.stop(); } catch (e) {}
+        try { if (isWeb && window && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+        try { const rec = webRecognitionRef.current; if (rec && rec.stop) rec.stop(); webRecognitionRef.current = null; } catch (e) {}
+        try { if (voiceRef.current && voiceRef.current.stop) voiceRef.current.stop(); } catch (e) {}
+      } catch (e) {}
+      setIsSessionActive(false);
+      navigation.goBack && navigation.goBack();
+      return;
+    }
+
     try {
       setIsProcessing(true);
       const response = await fetch(`${API_BASE_URL}/session/close?session_id=${sessionId}`, {
@@ -293,13 +463,19 @@ const LiveAudioChatScreen = ({ navigation }) => {
         }
       }
       
+      // cleanup audio resources
+      try { if (ttsRef.current && ttsRef.current.stop) ttsRef.current.stop(); } catch (e) {}
+      try { if (isWeb && window && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+      try { const rec = webRecognitionRef.current; if (rec && rec.stop) rec.stop(); webRecognitionRef.current = null; } catch (e) {}
+      try { if (voiceRef.current && voiceRef.current.stop) voiceRef.current.stop(); } catch (e) {}
+
       setIsSessionActive(false);
       setSessionId(null);
-      navigation.goBack();
+      navigation.goBack && navigation.goBack();
     } catch (error) {
       console.error('Error ending session:', error);
       Alert.alert('Error', 'There was an issue ending the session, but it will be closed automatically.');
-      navigation.goBack();
+      navigation.goBack && navigation.goBack();
     } finally {
       setIsProcessing(false);
     }
@@ -429,10 +605,19 @@ const speakMessage = async (text) => {
           window.speechSynthesis.cancel();
           
           const utterance = new SpeechSynthesisUtterance(text);
-          utterance.lang = 'en-US';
-          utterance.rate = 0.8;
-          utterance.pitch = 1.0;
-          utterance.volume = 1.0;
+            utterance.lang = 'en-US';
+            // prefer chosen web voice if available
+            try {
+              if (webVoiceRef.current) {
+                utterance.voice = webVoiceRef.current;
+              }
+            } catch (e) {
+              // ignore
+            }
+            // slightly slower rate and natural pitch
+            utterance.rate = 0.9;
+            utterance.pitch = 1.05;
+            utterance.volume = 1.0;
           
           utterance.onstart = () => {
             console.log('Web TTS started');
@@ -450,6 +635,39 @@ const speakMessage = async (text) => {
           };
           
           webUtteranceRef.current = utterance;
+          // pause recognition while speaking
+          try {
+            pauseRecognitionRef.current = true;
+            const rec = webRecognitionRef.current;
+            if (rec && rec.stop) try { rec.stop(); } catch (e) {}
+          } catch (e) {}
+
+          utterance.onend = () => {
+            console.log('Web TTS ended (utterance.onend) - pauseRecognitionRef, isSessionActive:', pauseRecognitionRef.current, isSessionActive);
+            setIsSpeaking(false);
+            pauseRecognitionRef.current = false;
+            try {
+              if (isSessionActive) {
+                    console.log('Attempting immediate startListening() from web utterance.onend');
+                    try {
+                      (async () => {
+                        try {
+                          await startListening();
+                          return;
+                        } catch (e) {
+                          console.error('Immediate startListening() failed on web:', e);
+                        }
+                      })();
+                    } catch (e) {
+                      console.error('Immediate startListening wrapper failed on web:', e);
+                    }
+
+                    console.log('Calling attemptRestartRecognition from web utterance.onend');
+                    attemptRestartRecognition();
+              }
+            } catch (e) { console.error('Error in utterance.onend handler', e); }
+          };
+
           window.speechSynthesis.speak(utterance);
           console.log('Web TTS initiated');
           return;
@@ -465,7 +683,18 @@ const speakMessage = async (text) => {
     // Native platforms
     if (ttsRef.current && ttsRef.current.speak) {
       console.log('Using native TTS');
-      await ttsRef.current.speak(text);
+      try {
+        // pause recognition
+        pauseRecognitionRef.current = true;
+        if (voiceRef.current && voiceRef.current.stop) {
+          try { await voiceRef.current.stop(); } catch (e) {}
+        }
+
+        await ttsRef.current.speak(text);
+        // speaking will emit events (tts-finish) which we listen to; resume there
+      } catch (e) {
+        console.error('Native TTS speak failed', e);
+      }
     } else {
       console.log('Native TTS not available');
       // Fallback: show alert that TTS is not available
@@ -528,8 +757,21 @@ useEffect(() => {
       setIsSpeaking(true);
     };
     const onTtsFinish = () => {
-      console.log('Native TTS finished');
+      console.log('Native TTS finished (second handler) - clearing pause and attempting restart');
       setIsSpeaking(false);
+      pauseRecognitionRef.current = false;
+      try {
+        if (isSessionActive) {
+          console.log('Attempting immediate native startListening() from onTtsFinish');
+          try {
+            startListening();
+            return;
+          } catch (e) {
+            console.error('Immediate startListening() failed on native:', e);
+          }
+          attemptRestartRecognition();
+        }
+      } catch (e) { console.error(e); }
     };
     const onTtsCancel = () => {
       console.log('Native TTS cancelled');
@@ -610,9 +852,10 @@ useEffect(() => {
           return;
         }
 
-        const recognition = new SpeechRecognition();
+          const recognition = new SpeechRecognition();
         recognition.lang = 'en-US';
-        recognition.interimResults = true;
+          recognition.interimResults = true;
+          recognition.continuous = true; // keep capturing until user stops
         recognition.maxAlternatives = 1;
 
         recognition.onstart = () => {
@@ -620,7 +863,7 @@ useEffect(() => {
           animateMicrophone();
         };
 
-        recognition.onresult = (event) => {
+        const _onResult = (event) => {
           let interim = '';
           let finalTranscript = '';
           for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -637,18 +880,40 @@ useEffect(() => {
             handleUserMessage(finalTranscript);
           }
         };
+        webOnResultRef.current = _onResult;
+        recognition.onresult = _onResult;
 
-        recognition.onerror = (e) => {
+        const _onError = (e) => {
           console.error('Web recognition error', e);
           setIsListening(false);
           stopMicrophoneAnimation();
           Alert.alert('Speech Recognition Error', 'Please try speaking again.');
         };
+        webOnErrorRef.current = _onError;
+        recognition.onerror = _onError;
 
-        recognition.onend = () => {
-          setIsListening(false);
-          stopMicrophoneAnimation();
+        const _onEnd = () => {
+          // If latched (live conversation), restart recognition automatically
+          if (isLatched) {
+            try {
+              // small delay then restart
+              setTimeout(() => {
+                try {
+                  recognition.start();
+                } catch (e) {
+                  console.error('Failed to restart web recognition:', e);
+                }
+              }, 250);
+            } catch (e) {
+              console.error('Error restarting recognition onend:', e);
+            }
+          } else {
+            setIsListening(false);
+            stopMicrophoneAnimation();
+          }
         };
+        webOnEndRef.current = _onEnd;
+        recognition.onend = _onEnd;
 
         webRecognitionRef.current = recognition;
         recognition.start();
@@ -670,6 +935,8 @@ useEffect(() => {
 
   const stopListening = async () => {
     try {
+      // clear latched mode
+      setIsLatched(false);
       if (isWeb) {
         const rec = webRecognitionRef.current;
         if (rec && rec.stop) try { rec.stop(); } catch (e) {}
@@ -689,9 +956,12 @@ useEffect(() => {
   };
 
   const toggleListening = () => {
-    if (isListening) {
+    // toggle latched live-conversation mode
+    if (isLatched) {
+      setIsLatched(false);
       stopListening();
     } else {
+      setIsLatched(true);
       startListening();
     }
   };
@@ -776,8 +1046,13 @@ useEffect(() => {
         </View>
         <TouchableOpacity 
           style={ChatStyles.endSessionButton}
-          onPress={endSession}
-          disabled={isProcessing}
+          onPress={() => {
+            if (isProcessing) {
+              Alert.alert('Please wait', 'An operation is in progress. Please wait a moment.');
+              return;
+            }
+            endSession();
+          }}
         >
           <Text style={ChatStyles.endSessionButtonText}>End Session</Text>
         </TouchableOpacity>
@@ -828,7 +1103,7 @@ useEffect(() => {
                   onPress={toggleListening}
                   disabled={isSpeaking || isProcessing}
                 >
-                  <Text style={ChatStyles.micButtonText}>{isListening ? '🎤' : '🎙️'}</Text>
+                  <Text style={ChatStyles.micButtonText}>{isLatched ? '📞' : (isListening ? '🎤' : '🎙️')}</Text>
                 </TouchableOpacity>
               </Animated.View>
 
@@ -883,7 +1158,7 @@ useEffect(() => {
                   onPress={toggleListening}
                   disabled={isSpeaking || isProcessing}
                 >
-                  <Text style={ChatStyles.micButtonText}>{isListening ? '🎤' : '🎙️'}</Text>
+                  <Text style={ChatStyles.micButtonText}>{isLatched ? '📞' : (isListening ? '🎤' : '🎙️')}</Text>
                 </TouchableOpacity>
               </Animated.View>
 
