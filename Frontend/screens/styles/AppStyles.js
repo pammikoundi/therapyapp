@@ -81,6 +81,11 @@ export const ChatStyles = StyleSheet.create({
   aiMessageTime: { textAlign: 'left' },
 
   inputContainer: { padding: 12, backgroundColor: Colors.white },
+  compactInputBar: { position: 'absolute', left: 0, right: 0, bottom: 10, alignItems: 'center', zIndex: 30 },
+  compactInputBarRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  inputTopRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingBottom: 8 },
+  inputCloseButton: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#EEE', borderRadius: 8 },
+  inputCloseButtonText: { color: Colors.textSecondary, fontWeight: '600' },
   textInputContainer: { flexDirection: 'row', alignItems: 'center' },
   textInput: { flex: 1, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, padding: 10, backgroundColor: '#F5F5F5' },
   sendButton: { marginLeft: 8, backgroundColor: Colors.primary, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
@@ -89,6 +94,9 @@ export const ChatStyles = StyleSheet.create({
 
   // audio controls placeholders
   audioControlsContainer: { flexDirection: 'row', alignItems: 'center', padding: 12 },
+  audioControlsCenter: { justifyContent: 'center' },
+  openMessageButton: { marginLeft: 12, backgroundColor: Colors.primary, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 24, justifyContent: 'center' },
+  openMessageButtonText: { color: '#fff', fontWeight: '700' },
   micButton: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
   micButtonActive: { backgroundColor: '#FF6B6B' },
   micButtonDisabled: { backgroundColor: Colors.textSecondary },

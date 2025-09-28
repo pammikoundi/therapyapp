@@ -12,7 +12,6 @@ import {
   Animated,
   TextInput,
 } from 'react-native';
-// Voice is native-only; require dynamically on non-web platforms to avoid web bundling errors
 import { ChatStyles, Colors } from '../styles/AppStyles';
 
 const LiveAudioChatScreen = ({ navigation }) => {
@@ -34,6 +33,7 @@ const LiveAudioChatScreen = ({ navigation }) => {
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [textInput, setTextInput] = useState('');
   const [isTypingMode, setIsTypingMode] = useState(false);
+  const [isInputOpen, setIsInputOpen] = useState(false);
   const scrollViewRef = useRef(null);
   const sessionCreatingRef = useRef(false);
   
@@ -245,7 +245,7 @@ const LiveAudioChatScreen = ({ navigation }) => {
         if (showWelcome) {
           const welcomeMessage = {
             id: '1',
-            text: "Hello! I'm Alex, your AI therapy companion. I'm here to listen and support you. How are you feeling today?",
+            text: "Hello! I'm Alex, companion. I'm here to listen and support you. What would you like to talk about today?",
             isUser: false,
             timestamp: new Date(),
           };
@@ -480,32 +480,6 @@ const speakMessage = async (text) => {
     Alert.alert('TTS Error', 'Unable to speak the message, but you can still read it.');
   }
 };
-
-// Key changes to make in your existing handleUserMessage function:
-// 1. Replace the existing speakMessage call with better error handling
-// 2. Add debug logging to track TTS execution
-
-// In your existing handleUserMessage function, replace this section:
-/*
-        // Speak AI response if TTS is available
-        try {
-          await speakMessage(aiData.response);
-        } catch (error) {
-          console.log('TTS not available for AI response');
-        }
-*/
-
-// With this improved version:
-/*
-        // IMPORTANT: Speak AI response - this is where Alex speaks
-        console.log('About to speak AI response:', aiData.response);
-        try {
-          await speakMessage(aiData.response);
-        } catch (error) {
-          console.log('TTS failed for AI response:', error);
-          // Don't show alert here as it would be annoying, just log
-        }
-*/
 
 // Add a manual TTS test function (you can call this to test TTS)
 const testTTS = () => {
@@ -848,61 +822,92 @@ useEffect(() => {
           )}
         </ScrollView>
 
-        {/* Input Section */}
-        <View style={ChatStyles.inputContainer}>
-          {/* Text Input */}
-          <View style={ChatStyles.textInputContainer}>
-            <TextInput
-              style={ChatStyles.textInput}
-              placeholder="Type your message..."
-              value={textInput}
-              onChangeText={setTextInput}
-              multiline
-              maxLength={500}
-              editable={!isProcessing}
-            />
-            <TouchableOpacity 
-              style={[
-                ChatStyles.sendButton,
-                (!textInput.trim() || isProcessing) && ChatStyles.sendButtonDisabled
-              ]}
-              onPress={handleTextSubmit}
-              disabled={!textInput.trim() || isProcessing}
-            >
-              <Text style={ChatStyles.sendButtonText}>Send</Text>
-            </TouchableOpacity>
-          </View>
+        {/* Input Section: compact toggle bar when closed, expanded input when open */}
+        {!isInputOpen ? (
+          <View style={ChatStyles.compactInputBar}>
+            <View style={ChatStyles.compactInputBarRow}>
+              <Animated.View style={{ transform: [{ scale: micAnimation }] }}>
+                <TouchableOpacity
+                  style={[
+                    ChatStyles.micButton,
+                    isListening && ChatStyles.micButtonActive,
+                    (isSpeaking || isProcessing) && ChatStyles.micButtonDisabled
+                  ]}
+                  onPress={toggleListening}
+                  disabled={isSpeaking || isProcessing}
+                >
+                  <Text style={ChatStyles.micButtonText}>{isListening ? '🎤' : '🎙️'}</Text>
+                </TouchableOpacity>
+              </Animated.View>
 
-          {/* Audio Controls */}
-          <View style={ChatStyles.audioControlsContainer}>
-            <Animated.View style={{ transform: [{ scale: micAnimation }] }}>
+              <TouchableOpacity
+                style={ChatStyles.openMessageButton}
+                onPress={() => setIsInputOpen(true)}
+              >
+                <Text style={ChatStyles.openMessageButtonText}>Message</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={ChatStyles.inputContainer}>
+            <View style={ChatStyles.inputTopRow}>
+              <TouchableOpacity onPress={() => setIsInputOpen(false)} style={ChatStyles.inputCloseButton}>
+                <Text style={ChatStyles.inputCloseButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Text Input */}
+            <View style={ChatStyles.textInputContainer}>
+              <TextInput
+                style={ChatStyles.textInput}
+                placeholder="Type your message..."
+                value={textInput}
+                onChangeText={setTextInput}
+                multiline
+                maxLength={500}
+                editable={!isProcessing}
+              />
               <TouchableOpacity 
                 style={[
-                  ChatStyles.micButton,
-                  isListening && ChatStyles.micButtonActive,
-                  (isSpeaking || isProcessing) && ChatStyles.micButtonDisabled
+                  ChatStyles.sendButton,
+                  (!textInput.trim() || isProcessing) && ChatStyles.sendButtonDisabled
                 ]}
-                onPress={toggleListening}
-                disabled={isSpeaking || isProcessing}
+                onPress={handleTextSubmit}
+                disabled={!textInput.trim() || isProcessing}
               >
-                <Text style={ChatStyles.micButtonText}>
-                  {isListening ? '🎤' : '🎙️'}
-                </Text>
+                <Text style={ChatStyles.sendButtonText}>Send</Text>
               </TouchableOpacity>
-            </Animated.View>
-            
-            {isSpeaking && (
-              <TouchableOpacity 
-                style={ChatStyles.stopSpeechButton}
-                onPress={() => {
-                  try { if (ttsRef.current && ttsRef.current.stop) ttsRef.current.stop(); } catch (e) {}
-                }}
-              >
-                <Text style={ChatStyles.stopSpeechButtonText}>⏹️ Stop</Text>
-              </TouchableOpacity>
-            )}
+            </View>
+
+            {/* Audio Controls with centered mic */}
+            <View style={[ChatStyles.audioControlsContainer, ChatStyles.audioControlsCenter]}> 
+              <Animated.View style={{ transform: [{ scale: micAnimation }] }}>
+                <TouchableOpacity 
+                  style={[
+                    ChatStyles.micButton,
+                    isListening && ChatStyles.micButtonActive,
+                    (isSpeaking || isProcessing) && ChatStyles.micButtonDisabled
+                  ]}
+                  onPress={toggleListening}
+                  disabled={isSpeaking || isProcessing}
+                >
+                  <Text style={ChatStyles.micButtonText}>{isListening ? '🎤' : '🎙️'}</Text>
+                </TouchableOpacity>
+              </Animated.View>
+
+              {isSpeaking && (
+                <TouchableOpacity 
+                  style={ChatStyles.stopSpeechButton}
+                  onPress={() => {
+                    try { if (ttsRef.current && ttsRef.current.stop) ttsRef.current.stop(); } catch (e) {}
+                  }}
+                >
+                  <Text style={ChatStyles.stopSpeechButtonText}>⏹️ Stop</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-        </View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
