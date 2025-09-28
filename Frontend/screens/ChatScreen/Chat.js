@@ -420,40 +420,212 @@ const LiveAudioChatScreen = ({ navigation }) => {
   };
 
   // Audio Functions
-  const speakMessage = async (text) => {
-    try {
-      if (isWeb) {
-        try {
-          if (window && window.speechSynthesis) {
-            // cancel any existing speech
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'en-US';
-            utterance.rate = 1.0;
-            utterance.onstart = () => setIsSpeaking(true);
-            utterance.onend = () => setIsSpeaking(false);
-            utterance.onerror = () => setIsSpeaking(false);
-            webUtteranceRef.current = utterance;
-            window.speechSynthesis.speak(utterance);
-            return;
-          }
-        } catch (e) {
-          console.log('Web TTS failed', e);
+  // Updated speakMessage function with better error handling and debugging
+const speakMessage = async (text) => {
+  try {
+    console.log('Attempting to speak:', text); // Debug log
+    
+    if (isWeb) {
+      try {
+        if (window && window.speechSynthesis) {
+          // Cancel any existing speech
+          window.speechSynthesis.cancel();
+          
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = 'en-US';
+          utterance.rate = 0.8; // Slightly slower for better clarity
+          utterance.pitch = 1.0;
+          utterance.volume = 1.0;
+          
+          utterance.onstart = () => {
+            console.log('Web TTS started');
+            setIsSpeaking(true);
+          };
+          
+          utterance.onend = () => {
+            console.log('Web TTS ended');
+            setIsSpeaking(false);
+          };
+          
+          utterance.onerror = (error) => {
+            console.log('Web TTS error:', error);
+            setIsSpeaking(false);
+          };
+          
+          webUtteranceRef.current = utterance;
+          window.speechSynthesis.speak(utterance);
+          console.log('Web TTS initiated');
+          return;
+        } else {
+          console.log('Web Speech Synthesis not available');
         }
-        return;
+      } catch (e) {
+        console.log('Web TTS failed:', e);
       }
+      return;
+    }
 
-      if (ttsRef.current && ttsRef.current.speak) {
-        await ttsRef.current.speak(text);
-      } else {
-        // no-op if TTS not available
-        return;
+    // Native platforms
+    if (ttsRef.current && ttsRef.current.speak) {
+      console.log('Using native TTS');
+      await ttsRef.current.speak(text);
+    } else {
+      console.log('Native TTS not available');
+      // Fallback: show alert that TTS is not available
+      Alert.alert('TTS Not Available', 'Text-to-speech is not available on this device.');
+    }
+  } catch (error) {
+    console.error('TTS error:', error);
+    // Don't throw error, just log it so the app continues working
+    Alert.alert('TTS Error', 'Unable to speak the message, but you can still read it.');
+  }
+};
+
+// Key changes to make in your existing handleUserMessage function:
+// 1. Replace the existing speakMessage call with better error handling
+// 2. Add debug logging to track TTS execution
+
+// In your existing handleUserMessage function, replace this section:
+/*
+        // Speak AI response if TTS is available
+        try {
+          await speakMessage(aiData.response);
+        } catch (error) {
+          console.log('TTS not available for AI response');
+        }
+*/
+
+// With this improved version:
+/*
+        // IMPORTANT: Speak AI response - this is where Alex speaks
+        console.log('About to speak AI response:', aiData.response);
+        try {
+          await speakMessage(aiData.response);
+        } catch (error) {
+          console.log('TTS failed for AI response:', error);
+          // Don't show alert here as it would be annoying, just log
+        }
+*/
+
+// Add a manual TTS test function (you can call this to test TTS)
+const testTTS = () => {
+  speakMessage("Hello, this is Alex testing text to speech functionality.");
+};
+
+// Enhanced TTS initialization for native platforms
+useEffect(() => {
+  // Web platform: use Web Speech API for STT and TTS
+  if (isWeb) {
+    initializeVoice();
+    
+    // Test if Web Speech Synthesis is available
+    if (window && window.speechSynthesis) {
+      console.log('Web Speech Synthesis is available');
+    } else {
+      console.log('Web Speech Synthesis is NOT available');
+    }
+
+    return () => {
+      try {
+        const rec = webRecognitionRef.current;
+        if (rec && rec.stop) {
+          rec.stop();
+        }
+      } catch (e) {}
+
+      try {
+        if (window && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
+      } catch (e) {}
+    };
+  }
+
+  // Native platforms: try to require react-native-tts dynamically
+  try {
+    const NativeTts = require('react-native-tts');
+    ttsRef.current = NativeTts;
+    console.log('Native TTS loaded successfully');
+
+    // Load native voice module dynamically
+    try {
+      const NativeVoice = require('@react-native-voice/voice');
+      voiceRef.current = NativeVoice;
+      console.log('Native Voice loaded successfully');
+    } catch (e) {
+      console.log('Native voice module not available:', e);
+      voiceRef.current = null;
+    }
+
+    const onTtsStart = () => {
+      console.log('Native TTS started');
+      setIsSpeaking(true);
+    };
+    const onTtsFinish = () => {
+      console.log('Native TTS finished');
+      setIsSpeaking(false);
+    };
+    const onTtsCancel = () => {
+      console.log('Native TTS cancelled');
+      setIsSpeaking(false);
+    };
+
+    ttsHandlersRef.current = { onTtsStart, onTtsFinish, onTtsCancel };
+
+    NativeTts.getInitStatus && NativeTts.getInitStatus()
+      .then(() => {
+        console.log('Native TTS initialized successfully');
+        try {
+          NativeTts.setDefaultLanguage && NativeTts.setDefaultLanguage('en-US');
+          NativeTts.setDefaultRate && NativeTts.setDefaultRate(0.6); // Slightly slower
+          NativeTts.setDefaultPitch && NativeTts.setDefaultPitch(1.0);
+          console.log('Native TTS configured');
+        } catch (e) {
+          console.log('TTS config failed', e);
+        }
+      })
+      .catch((err) => {
+        console.log('TTS getInitStatus failed', err);
+      });
+
+    NativeTts.addEventListener && NativeTts.addEventListener('tts-start', onTtsStart);
+    NativeTts.addEventListener && NativeTts.addEventListener('tts-finish', onTtsFinish);
+    NativeTts.addEventListener && NativeTts.addEventListener('tts-cancel', onTtsCancel);
+  } catch (error) {
+    console.log('Native TTS unavailable:', error);
+    ttsRef.current = null;
+  }
+
+  initializeVoice();
+
+  return () => {
+    // Cleanup native Voice listeners if loaded
+    try {
+      const V = voiceRef.current;
+      if (V && V.destroy) {
+        V.destroy().then(() => {
+          V.removeAllListeners && V.removeAllListeners();
+        });
       }
-    } catch (error) {
-      console.error('TTS error:', error);
-      throw error;
+    } catch (e) {
+      // ignore
+    }
+
+    // Cleanup native TTS listeners and stop speaking
+    try {
+      const handlers = ttsHandlersRef.current || {};
+      const NativeTts = ttsRef.current;
+      if (NativeTts) {
+        handlers.onTtsStart && NativeTts.removeEventListener && NativeTts.removeEventListener('tts-start', handlers.onTtsStart);
+        handlers.onTtsFinish && NativeTts.removeEventListener && NativeTts.removeEventListener('tts-finish', handlers.onTtsFinish);
+        handlers.onTtsCancel && NativeTts.removeEventListener && NativeTts.removeEventListener('tts-cancel', handlers.onTtsCancel);
+        NativeTts.stop && NativeTts.stop();
+      }
+    } catch (e) {
+      // ignore cleanup errors
     }
   };
+}, []);
 
   const startListening = async () => {
     if (isSpeaking) {
