@@ -53,7 +53,7 @@ Response:"""
 
 async def summarize_text_flow(text: str) -> str:
     """
-    Summarizes the given text in a friendly, supportive way.
+    Summarizes the given text in a friendly, supportive way. Provides a warm reflection if person is wrong. Say in nice way.
     """
     try:
         prompt = f"""Write a warm, friendly summary of this conversation as if you're a supportive friend reflecting back on what was shared. Focus on:
@@ -148,3 +148,74 @@ If no clear goals are found, return: {{"goals": []}}"""
     except Exception as e:
         print(f"Error analyzing goals from session: {e}")
         return {"goals": []}
+
+async def generate_contextual_followup_question(current_history: List[dict], historical_context: dict) -> str:
+    """
+    Generates a follow-up question that prioritizes the current conversation 
+    while incorporating relevant context from previous SESSION SUMMARIES ONLY.
+    
+    Weighting: 80% current conversation, 20% historical summaries + goals
+    Privacy-focused: Uses only processed summaries, never raw messages from previous sessions.
+    """
+    try:
+        # Extract current conversation context with speaker roles
+        current_parts = []
+        for msg in current_history:
+            if "text" in msg and msg["text"].strip():
+                role = msg.get("role", "user")
+                speaker = "You" if role == "user" else "AI"
+                current_parts.append(f"{speaker}: {msg['text']}")
+        
+        current_conversation = "\n".join(current_parts)
+        
+        # Build historical context from summaries and goals only (keep very brief)
+        background_info = []
+        
+        # Add recent goals context (if any)
+        recent_goals = historical_context.get("recent_goals", [])
+        if recent_goals:
+            goals_text = ", ".join([f"{g['goal']} ({g['status']})" for g in recent_goals[:2]])
+            background_info.append(f"Current goals: {goals_text}")
+        
+        # Add brief context from session summaries (already pre-processed and truncated)
+        summary_context = historical_context.get("historical_context", "")
+        if summary_context:
+            background_info.append(summary_context)
+        
+        background_text = " | ".join(background_info) if background_info else ""
+        
+        # Create weighted prompt - heavily favor current conversation, light touch of summary context
+        prompt = f"""Generate a gentle, supportive response (1-2 lines maximum) that focuses primarily on the current conversation, with optional light reference to background context when naturally relevant.
+
+**CURRENT CONVERSATION** (Primary focus - 80% weight):
+{current_conversation}
+
+**BACKGROUND CONTEXT** (Light reference only - 20% weight, from previous session summaries):
+{background_text if background_text else "No prior context"}
+
+**Instructions:**
+- Respond PRIMARILY to what's happening RIGHT NOW in the current conversation
+- Use a warm, conversational tone (like a caring friend)
+- The background context is from previous session summaries - reference it only if it naturally connects to what they're sharing now
+- Examples of natural historical references:
+  * "How has that work situation been going?" (if work stress was mentioned in previous summaries)
+  * "Are you still working on that sleep goal?" (if sleep goals appear in context and current conversation relates)
+  * "This sounds like progress from what you mentioned before" (if there's clear connection)
+- Keep it gentle and non-pressuring
+- Most of the time, just acknowledge and validate what they're sharing NOW
+- Use supportive phrases like "That makes sense", "I can understand that", "It sounds like..."
+- Ask optional, soft questions like "Would you like to share more about that?"
+- Don't force historical connections - current conversation takes priority
+
+**Response:**"""
+
+        # Run the blocking call in a thread pool
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, model.generate_content, prompt)
+        
+        return response.text
+        
+    except Exception as e:
+        print(f"Error generating contextual follow-up question: {e}")
+        # Fallback to simple current conversation analysis
+        return await generate_followup_question(current_history)

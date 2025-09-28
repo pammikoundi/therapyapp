@@ -27,7 +27,7 @@ from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from models.schemas import Message
 from core.firebase import db
-from core.genkit_gemini import generate_followup_question, summarize_text_flow, analyze_goals_from_session
+from core.genkit_gemini import generate_followup_question, summarize_text_flow, analyze_goals_from_session, generate_contextual_followup_question
 from google.cloud.firestore_v1 import ArrayUnion
 from core.auth import get_current_user
 from datetime import datetime
@@ -257,6 +257,85 @@ async def track_goals_from_session(session_id: str, messages: List[dict], user_i
         logger.error(f"Error tracking goals from session {session_id}: {e}")
         return {"goals_processed": 0, "new_goals": 0, "updated_goals": 0, "error": str(e)}
 
+async def get_relevant_session_context(user_id: str, current_session_id: str, current_messages: List[dict]) -> dict:
+    """
+    Get relevant context from previous session SUMMARIES ONLY to inform question generation.
+    
+    This function:
+    1. Retrieves recent session summaries (NOT full messages)
+    2. Gets active user goals for context
+    3. Returns concise historical context for question generation
+    
+    Privacy-focused: Only uses processed summaries, never raw messages from previous sessions.
+    """
+    try:
+        # Get recent session summaries (last 3 sessions, excluding current)
+        # Using summaries ensures privacy and efficiency
+        summaries_query = db.collection("session_summaries")\
+            .where("user_id", "==", user_id)\
+            .order_by("created_at", direction="DESCENDING")\
+            .limit(3)
+        
+        summaries = list(summaries_query.stream())
+        recent_summaries = []
+        
+        for summary_doc in summaries:
+            if summary_doc.id == current_session_id:
+                continue  # Skip current session
+            summary_data = summary_doc.to_dict()
+            if summary_data and summary_data.get("summary"):
+                # Only store the summary text, not full session data
+                summary_text = summary_data.get("summary", "").strip()
+                if summary_text:
+                    recent_summaries.append({
+                        "summary": summary_text[:200],  # Limit length to keep context focused
+                        "session_date": summary_data.get("created_at")
+                    })
+        
+        # Get recent active goals for context
+        goals_query = db.collection("goals")\
+            .where("user_id", "==", user_id)\
+            .where("status", "in", ["started", "imagined"])\
+            .order_by("last_mentioned", direction="DESCENDING")\
+            .limit(3)
+        
+        recent_goals = []
+        goals_docs = list(goals_query.stream())
+        for goal_doc in goals_docs:
+            goal_data = goal_doc.to_dict()
+            if goal_data:
+                recent_goals.append({
+                    "goal": goal_data.get("goal", ""),
+                    "status": goal_data.get("status", ""),
+                    "category": goal_data.get("category", "")
+                })
+        
+        # Create brief historical context from summaries only
+        historical_context = ""
+        if recent_summaries:
+            # Combine the most recent 1-2 summaries into brief context
+            context_parts = []
+            for i, summary_data in enumerate(recent_summaries[:2]):
+                summary_text = summary_data["summary"]
+                # Keep each summary very brief for context
+                brief_summary = summary_text[:100] + "..." if len(summary_text) > 100 else summary_text
+                context_parts.append(f"Recent session {i+1}: {brief_summary}")
+            
+            historical_context = " | ".join(context_parts)
+        
+        context = {
+            "session_summaries": recent_summaries[:2],  # Most recent 2 summaries
+            "recent_goals": recent_goals,
+            "historical_context": historical_context
+        }
+        
+        logger.info(f"Retrieved summary-based context for session {current_session_id}: {len(recent_summaries)} summaries, {len(recent_goals)} goals")
+        return context
+        
+    except Exception as e:
+        logger.error(f"Error getting session context: {e}")
+        return {"session_summaries": [], "recent_goals": [], "historical_context": ""}
+
 async def summarize_text(messages: List[dict]):
     # Use Gemini to summarize the session
     context = "\n".join([m["text"] for m in messages if "text" in m])
@@ -428,8 +507,8 @@ async def generate_question(session_id: str, user=Depends(get_current_user)):
     Generate a brief therapeutic response (1-2 lines) and add it to the message history.
     
     This endpoint generates either a supportive statement or a concise follow-up
-    question based on the conversation history, then automatically adds the generated
-    response to the session's message history as a 'generated' message.
+    question based primarily on the current conversation, with relevant context
+    from previous sessions to maintain continuity.
     """
     session_ref = db.collection("sessions").document(session_id)
     session = session_ref.get()
@@ -447,8 +526,14 @@ async def generate_question(session_id: str, user=Depends(get_current_user)):
         summary_ref.delete()
         logger.info(f"Reopened session {session_id} by removing summary")
     
-    history = session_data.get("messages", [])
-    response = await generate_followup_question(history)
+    # Get current session messages (primary focus)
+    current_history = session_data.get("messages", [])
+    
+    # Get relevant context from previous sessions (secondary context)
+    historical_context = await get_relevant_session_context(user["uid"], session_id, current_history)
+    
+    # Generate response with weighted context
+    response = await generate_contextual_followup_question(current_history, historical_context)
     
     # Add the generated question/response to the message history
     msg_data = {
@@ -461,14 +546,15 @@ async def generate_question(session_id: str, user=Depends(get_current_user)):
         "messages": ArrayUnion([msg_data])
     })
     
-    logger.info(f"Generated question added to session {session_id}: {response[:50]}...")
+    logger.info(f"Generated contextual question added to session {session_id}: {response[:50]}...")
     
     return {
         "response": response,
         "type": "therapeutic_response",
-        "note": "This response has been added to the message history",
+        "note": "This response prioritizes current conversation with historical context",
         "message_added": True,
-        "reopened": summary_doc.exists
+        "reopened": summary_doc.exists,
+        "used_historical_context": len(historical_context.get("session_summaries", [])) > 0 or len(historical_context.get("recent_goals", [])) > 0
     }
 
 @router.post("/")
