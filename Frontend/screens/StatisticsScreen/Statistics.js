@@ -291,7 +291,7 @@ const StatisticsScreen = () => {
           <StatCard
             title="Chat Sessions"
             value={stats.totalSessions}
-            subtitle="conversations with Alex"
+            subtitle="conversations with Looma"
           />
           <StatCard
             title="Current Streak"

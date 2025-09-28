@@ -180,7 +180,7 @@ const HistoryScreen = ({ navigation }) => {
     <SafeAreaView style={HistoryStyles.container}>
       <View style={HistoryStyles.header}>
         <Text style={HistoryStyles.headerTitle}>Chat History</Text>
-        <Text style={HistoryStyles.headerSubtitle}>Your conversations with Alex</Text>
+        <Text style={HistoryStyles.headerSubtitle}>Your conversations with Looma</Text>
       </View>
 
       {loading ? (
@@ -198,7 +198,7 @@ const HistoryScreen = ({ navigation }) => {
       ) : (
         <View style={HistoryStyles.emptyState}>
           <Text style={HistoryStyles.emptyStateText}>
-            No conversations yet. Start chatting with Alex to see your history here!
+            No conversations yet. Start chatting with Looma to see your history here!
           </Text>
         </View>
       )}

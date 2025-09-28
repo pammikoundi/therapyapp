@@ -22,68 +22,6 @@ export const SettingsStyles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#212529',
   },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    marginTop: 16,
-    marginHorizontal: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  profileImageContainer: {
-    marginRight: 16,
-  },
-  profileImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-  },
-  profileImagePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#6c757d',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileImageText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#212529',
-    marginBottom: 4,
-  },
-  profileEmail: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginBottom: 2,
-  },
-  profileJoinDate: {
-    fontSize: 12,
-    color: '#adb5bd',
-  },
-  profileArrow: {
-    fontSize: 24,
-    color: '#adb5bd',
-    marginLeft: 8,
-  },
   section: {
     marginTop: 24,
     marginHorizontal: 16,
@@ -138,7 +76,7 @@ export const SettingsStyles = StyleSheet.create({
     color: '#adb5bd',
     marginLeft: 8,
   },
-  logoutButton: {
+  clearDataButton: {
     backgroundColor: '#dc3545',
     marginHorizontal: 16,
     marginTop: 32,
@@ -155,7 +93,7 @@ export const SettingsStyles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-  logoutText: {
+  clearDataText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',

@@ -32,14 +32,14 @@ function CustomDrawerContent(props: any) {
           fontWeight: 'bold',
           color: '#333333',
         }}>
-          Alex Chat
+          Looma Chat
         </Text>
         <Text style={{
           fontSize: 14,
           color: '#666666',
           marginTop: 4,
         }}>
-          Your mental wellness companion
+          Your companion
         </Text>
       </View>
 
@@ -80,64 +80,7 @@ function CustomDrawerContent(props: any) {
           </TouchableOpacity>
         );
       })}
-
-      {/* Footer */}
-      <View style={{
-        position: 'absolute',
-        bottom: 20,
-        left: 20,
-        right: 20,
-      }}>
-        <Text style={{
-          fontSize: 12,
-          color: '#999999',
-          textAlign: 'center',
-        }}>
-          Version 1.0.0
-        </Text>
-      </View>
     </DrawerContentScrollView>
-  );
-}
-
-// Custom header with hamburger menu
-function DrawerToggleButton() {
-  const router = useRouter();
-  
-  const toggleDrawer = () => {
-    // Use router to dispatch drawer toggle
-    router.navigate('/' as any);
-    // Alternative approach - we'll handle this differently
-  };
-
-  return (
-    <TouchableOpacity
-      style={{
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-      }}
-      onPress={toggleDrawer}
-    >
-      <View>
-        <View style={{
-          width: 20,
-          height: 2,
-          backgroundColor: '#333333',
-          marginBottom: 4,
-        }} />
-        <View style={{
-          width: 20,
-          height: 2,
-          backgroundColor: '#333333',
-          marginBottom: 4,
-        }} />
-        <View style={{
-          width: 20,
-          height: 2,
-          backgroundColor: '#333333',
-        }} />
-      </View>
-    </TouchableOpacity>
   );
 }
 
@@ -149,14 +92,14 @@ export default function DrawerLayout() {
         screenOptions={({ navigation }) => ({
           headerShown: true,
           headerStyle: {
-            backgroundColor: '#FFFFFF',
+            backgroundColor: '#fff',
             elevation: 1,
             shadowOpacity: 0.1,
           },
           headerTitleStyle: {
             fontSize: 18,
             fontWeight: '600',
-            color: '#333333',
+            color: '#333',
           },
           headerLeft: () => (
             <TouchableOpacity
@@ -199,7 +142,7 @@ export default function DrawerLayout() {
         <Drawer.Screen
           name="index"
           options={{
-            title: 'Chat with Alex',
+            title: 'Chat with Looma',
           }}
         />
         <Drawer.Screen

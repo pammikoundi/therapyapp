@@ -245,7 +245,7 @@ const LiveAudioChatScreen = ({ navigation }) => {
         if (showWelcome) {
           const welcomeMessage = {
             id: '1',
-            text: "Hello! I'm Alex, companion. I'm here to listen and support you. What would you like to talk about today?",
+            text: "Hello! I'm Looma. I'm here to listen and support you. What would you like to talk about today?",
             isUser: false,
             timestamp: new Date(),
           };
@@ -322,8 +322,6 @@ const LiveAudioChatScreen = ({ navigation }) => {
         // wait briefly for other create to finish
         let attempts = 0;
         while (!sessionId && attempts < 20) {
-          // wait 200ms
-          // eslint-disable-next-line no-await-in-loop
           await new Promise((res) => setTimeout(res, 200));
           attempts += 1;
         }
@@ -420,10 +418,9 @@ const LiveAudioChatScreen = ({ navigation }) => {
   };
 
   // Audio Functions
-  // Updated speakMessage function with better error handling and debugging
 const speakMessage = async (text) => {
   try {
-    console.log('Attempting to speak:', text); // Debug log
+    console.log('Attempting to speak:', text);
     
     if (isWeb) {
       try {
@@ -433,7 +430,7 @@ const speakMessage = async (text) => {
           
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = 'en-US';
-          utterance.rate = 0.8; // Slightly slower for better clarity
+          utterance.rate = 0.8;
           utterance.pitch = 1.0;
           utterance.volume = 1.0;
           
@@ -479,11 +476,6 @@ const speakMessage = async (text) => {
     // Don't throw error, just log it so the app continues working
     Alert.alert('TTS Error', 'Unable to speak the message, but you can still read it.');
   }
-};
-
-// Add a manual TTS test function (you can call this to test TTS)
-const testTTS = () => {
-  speakMessage("Hello, this is Alex testing text to speech functionality.");
 };
 
 // Enhanced TTS initialization for native platforms
@@ -749,7 +741,7 @@ useEffect(() => {
         <View style={ChatStyles.centerContainer}>
           <Text style={ChatStyles.welcomeTitle}>AI Therapy Session</Text>
           <Text style={ChatStyles.welcomeSubtitle}>
-            Start a live conversation with Alex, your AI therapist
+            Start a live conversation with Looma, your AI therapist
           </Text>
           <TouchableOpacity 
             style={ChatStyles.startSessionButton}
@@ -770,14 +762,14 @@ useEffect(() => {
   return (
     <SafeAreaView style={ChatStyles.container}>
       <View style={ChatStyles.header}>
-        <Text style={ChatStyles.headerTitle}>Live Session with Alex</Text>
+        <Text style={ChatStyles.headerTitle}>Live Session with Looma</Text>
         <View style={ChatStyles.statusContainer}>
           <View style={[
             ChatStyles.statusIndicator, 
             isSessionActive && ChatStyles.statusActive
           ]} />
           <Text style={ChatStyles.headerSubtitle}>
-            {isSpeaking ? 'Alex is speaking...' : 
+            {isSpeaking ? 'Looma is speaking...' : 
              isListening ? 'Listening...' :
              isProcessing ? 'Processing...' : 'Tap mic to speak or type below'}
           </Text>
@@ -816,7 +808,7 @@ useEffect(() => {
             <View style={[ChatStyles.messageBubble, ChatStyles.aiMessage]}>
               <ActivityIndicator size="small" color={Colors.primary} />
               <Text style={[ChatStyles.messageText, ChatStyles.aiMessageText]}>
-                Alex is thinking...
+                Looma is thinking...
               </Text>
             </View>
           )}
