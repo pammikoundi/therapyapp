@@ -101,7 +101,7 @@ export const ChatStyles = StyleSheet.create({
   audioControlsContainer: { flexDirection: 'row', alignItems: 'center', padding: 12 },
   audioControlsCenter: { justifyContent: 'center' },
   micButton: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
-  micButtonActive: { backgroundColor: Colors.accentWarm },
+  micButtonActive: { backgroundColor: Colors.error },
   micButtonDisabled: { backgroundColor: Colors.muted },
   micButtonText: { fontSize: 28 },
   stopSpeechButton: { marginLeft: 12, backgroundColor: Colors.accentWarm, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
