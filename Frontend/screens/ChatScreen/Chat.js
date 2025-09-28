@@ -355,26 +355,67 @@ const LiveAudioChatScreen = ({ navigation }) => {
 
   // Animation functions
   const animateMicrophone = () => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(micAnimation, {
-          toValue: 1.3,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.timing(micAnimation, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
+    // pulsing disabled per user request — keep static scale
+    try { micAnimation.setValue(1); } catch (e) { /* ignore */ }
   };
 
   const stopMicrophoneAnimation = () => {
     micAnimation.stopAnimation();
     micAnimation.setValue(1);
   };
+
+  // Pause mic while AI is processing/thinking, and resume afterward when appropriate
+  const pauseMicForProcessing = async () => {
+    try {
+      console.log('Pausing mic for AI processing');
+      pauseRecognitionRef.current = true;
+      if (isWeb) {
+        const rec = webRecognitionRef.current;
+        if (rec && rec.stop) {
+          try { rec.stop(); } catch (e) { console.error('Error stopping web recognition for processing pause', e); }
+        }
+        // clear reference so restart helper will recreate
+        webRecognitionRef.current = null;
+      } else {
+        const V = voiceRef.current;
+        if (V && V.stop) {
+          try { await V.stop(); } catch (e) { console.error('Error stopping native voice for processing pause', e); }
+        }
+      }
+    } catch (e) {
+      console.error('pauseMicForProcessing error', e);
+    }
+    setIsListening(false);
+    stopMicrophoneAnimation();
+  };
+
+  const resumeMicAfterProcessing = () => {
+    try {
+      console.log('Resuming mic after AI processing');
+      pauseRecognitionRef.current = false;
+      if (isLatched) {
+        const delay = AUTO_RESTART_AFTER_PROCESSING_MS || AUTO_RESTART_AFTER_MS || 600;
+        setTimeout(() => {
+          try {
+            attemptRestartRecognition();
+          } catch (err) {
+            console.error('Error attempting restart after processing', err);
+          }
+        }, delay);
+      }
+    } catch (e) {
+      console.error('resumeMicAfterProcessing error', e);
+    }
+  };
+
+  useEffect(() => {
+    // whenever processing state changes, pause/resume mic accordingly
+    if (isProcessing) {
+      pauseMicForProcessing();
+    } else {
+      resumeMicAfterProcessing();
+    }
+  }, [isProcessing]);
 
   // Session Management
   const startSession = async (showWelcome = true) => {
@@ -403,7 +444,7 @@ const LiveAudioChatScreen = ({ navigation }) => {
         if (showWelcome) {
           const welcomeMessage = {
             id: '1',
-            text: "Hello! I'm Looma. I'm here to listen and support you. What would you like to talk about today?",
+            text: "What would you like to talk about today?",
             isUser: false,
             timestamp: new Date(),
           };
@@ -412,6 +453,8 @@ const LiveAudioChatScreen = ({ navigation }) => {
           // Speak welcome message if TTS is available
           try {
             await speakMessage(welcomeMessage.text);
+            // enable latched live mic so resume logic will re-open the mic after processing
+            setIsLatched(true);
           } catch (error) {
             console.log('TTS not available, continuing without audio');
           }
@@ -1093,7 +1136,7 @@ useEffect(() => {
         {!isInputOpen ? (
           <View style={ChatStyles.compactInputBar}>
             <View style={ChatStyles.compactInputBarRow}>
-              <Animated.View style={{ transform: [{ scale: micAnimation }] }}>
+              <View>
                 <TouchableOpacity
                   style={[
                     ChatStyles.micButton,
@@ -1105,7 +1148,7 @@ useEffect(() => {
                 >
                   <Text style={ChatStyles.micButtonText}>{isLatched ? '📞' : (isListening ? '🎤' : '🎙️')}</Text>
                 </TouchableOpacity>
-              </Animated.View>
+              </View>
 
               <TouchableOpacity
                 style={ChatStyles.openMessageButton}
@@ -1148,7 +1191,7 @@ useEffect(() => {
 
             {/* Audio Controls with centered mic */}
             <View style={[ChatStyles.audioControlsContainer, ChatStyles.audioControlsCenter]}> 
-              <Animated.View style={{ transform: [{ scale: micAnimation }] }}>
+              <View>
                 <TouchableOpacity 
                   style={[
                     ChatStyles.micButton,
@@ -1160,7 +1203,7 @@ useEffect(() => {
                 >
                   <Text style={ChatStyles.micButtonText}>{isLatched ? '📞' : (isListening ? '🎤' : '🎙️')}</Text>
                 </TouchableOpacity>
-              </Animated.View>
+              </View>
 
               {isSpeaking && (
                 <TouchableOpacity 
