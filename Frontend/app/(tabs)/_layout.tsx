@@ -32,7 +32,7 @@ function CustomDrawerContent(props: any) {
           fontWeight: 'bold',
           color: '#333333',
         }}>
-          Looma Chat
+          TalkTime
         </Text>
         <Text style={{
           fontSize: 14,
