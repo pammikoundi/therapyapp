@@ -10,12 +10,16 @@ import {
   Alert,
   ActivityIndicator,
   Animated,
+  TextInput,
 } from 'react-native';
-import Voice from '@react-native-voice/voice';
-import Tts from 'react-native-tts';
+// Voice is native-only; require dynamically on non-web platforms to avoid web bundling errors
 import { ChatStyles, Colors } from '../styles/AppStyles';
 
 const LiveAudioChatScreen = ({ navigation }) => {
+  // Configuration
+  const API_BASE_URL = 'https://therapyapp-backend-82022078425.us-central1.run.app';
+  const userToken = 'authorization'; // Replace with actual token or remove if not needed
+  
   // Session management
   const [sessionId, setSessionId] = useState(null);
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -28,46 +32,131 @@ const LiveAudioChatScreen = ({ navigation }) => {
   // Messages and UI
   const [messages, setMessages] = useState([]);
   const [currentTranscript, setCurrentTranscript] = useState('');
+  const [textInput, setTextInput] = useState('');
+  const [isTypingMode, setIsTypingMode] = useState(false);
   const scrollViewRef = useRef(null);
+  const sessionCreatingRef = useRef(false);
   
   // Animation for microphone button
   const micAnimation = useRef(new Animated.Value(1)).current;
+  const ttsRef = useRef(null);
+  const ttsHandlersRef = useRef({});
+  const webRecognitionRef = useRef(null);
+  const webUtteranceRef = useRef(null);
+  const voiceRef = useRef(null);
+  const isWeb = Platform.OS === 'web';
 
   // Initialize TTS and Voice Recognition
   useEffect(() => {
-    initializeTTS();
-    initializeVoice();
-    
+    // Web platform: use Web Speech API for STT and TTS
+    if (isWeb) {
+      // Nothing synchronous needed here; initializeVoice will set up recognition instance
+      initializeVoice();
+
+      return () => {
+        // cleanup web recognition
+        try {
+          const rec = webRecognitionRef.current;
+          if (rec && rec.stop) {
+            rec.stop();
+          }
+        } catch (e) {}
+
+        try {
+          // stop any speaking
+          if (window && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+          }
+        } catch (e) {}
+      };
+    }
+
+    // Native platforms: try to require react-native-tts dynamically to avoid web bundling issues
+    try {
+      // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+      // only require on non-web platforms
+      const NativeTts = require('react-native-tts');
+      ttsRef.current = NativeTts;
+
+      // load native voice module dynamically
+      try {
+        // eslint-disable-next-line global-require
+        const NativeVoice = require('@react-native-voice/voice');
+        voiceRef.current = NativeVoice;
+      } catch (e) {
+        console.log('Native voice module not available:', e);
+        voiceRef.current = null;
+      }
+
+      const onTtsStart = () => setIsSpeaking(true);
+      const onTtsFinish = () => setIsSpeaking(false);
+      const onTtsCancel = () => setIsSpeaking(false);
+
+      ttsHandlersRef.current = { onTtsStart, onTtsFinish, onTtsCancel };
+
+      NativeTts.getInitStatus && NativeTts.getInitStatus()
+        .then(() => {
+          try {
+            NativeTts.setDefaultLanguage && NativeTts.setDefaultLanguage('en-US');
+            NativeTts.setDefaultRate && NativeTts.setDefaultRate(0.5);
+            NativeTts.setDefaultPitch && NativeTts.setDefaultPitch(1.0);
+          } catch (e) {
+            console.log('TTS config failed', e);
+          }
+        })
+        .catch((err) => console.log('TTS getInitStatus failed', err));
+
+      NativeTts.addEventListener && NativeTts.addEventListener('tts-start', onTtsStart);
+      NativeTts.addEventListener && NativeTts.addEventListener('tts-finish', onTtsFinish);
+      NativeTts.addEventListener && NativeTts.addEventListener('tts-cancel', onTtsCancel);
+    } catch (error) {
+      console.log('Native TTS unavailable:', error);
+      ttsRef.current = null;
+    }
+
+  // Initialize voice for native path
+  initializeVoice();
+
     return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
-      Tts.stop();
+      // Cleanup native Voice listeners if loaded
+      try {
+        const V = voiceRef.current;
+        if (V && V.destroy) {
+          V.destroy().then(() => {
+            V.removeAllListeners && V.removeAllListeners();
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      // Cleanup native TTS listeners and stop speaking
+      try {
+        const handlers = ttsHandlersRef.current || {};
+        const NativeTts = ttsRef.current;
+        if (NativeTts) {
+          handlers.onTtsStart && NativeTts.removeEventListener && NativeTts.removeEventListener('tts-start', handlers.onTtsStart);
+          handlers.onTtsFinish && NativeTts.removeEventListener && NativeTts.removeEventListener('tts-finish', handlers.onTtsFinish);
+          handlers.onTtsCancel && NativeTts.removeEventListener && NativeTts.removeEventListener('tts-cancel', handlers.onTtsCancel);
+          NativeTts.stop && NativeTts.stop();
+        }
+      } catch (e) {
+        // ignore cleanup errors
+      }
     };
   }, []);
 
-  const initializeTTS = async () => {
-    try {
-      // Configure TTS settings
-      await Tts.setDefaultLanguage('en-US');
-      await Tts.setDefaultRate(0.5);
-      await Tts.setDefaultPitch(1.0);
-      
-      // Set up TTS event listeners
-      Tts.addEventListener('tts-start', () => setIsSpeaking(true));
-      Tts.addEventListener('tts-finish', () => setIsSpeaking(false));
-      Tts.addEventListener('tts-cancel', () => setIsSpeaking(false));
-    } catch (error) {
-      console.error('TTS initialization error:', error);
-    }
-  };
-
   const initializeVoice = async () => {
     try {
-      // Set up Voice recognition event listeners
-      Voice.onSpeechStart = onSpeechStart;
-      Voice.onSpeechEnd = onSpeechEnd;
-      Voice.onSpeechResults = onSpeechResults;
-      Voice.onSpeechPartialResults = onSpeechPartialResults;
-      Voice.onSpeechError = onSpeechError;
+      // Set up native Voice recognition event listeners if available
+      const V = voiceRef.current;
+      if (V) {
+        V.onSpeechStart = onSpeechStart;
+        V.onSpeechEnd = onSpeechEnd;
+        V.onSpeechResults = onSpeechResults;
+        V.onSpeechPartialResults = onSpeechPartialResults;
+        V.onSpeechError = onSpeechError;
+      }
     } catch (error) {
       console.error('Voice initialization error:', error);
     }
@@ -77,6 +166,7 @@ const LiveAudioChatScreen = ({ navigation }) => {
   const onSpeechStart = () => {
     setIsListening(true);
     animateMicrophone();
+    // frontend STT handled by react-native-voice (onSpeechResults/onSpeechPartialResults)
   };
 
   const onSpeechEnd = () => {
@@ -129,36 +219,51 @@ const LiveAudioChatScreen = ({ navigation }) => {
   };
 
   // Session Management
-  const startSession = async () => {
+  const startSession = async (showWelcome = true) => {
     try {
-      const response = await fetch('/session/', {
+      setIsProcessing(true);
+      const response = await fetch(`${API_BASE_URL}/session/`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${userToken}`, // You'll need to pass this from auth
+          'Authorization': `Bearer ${userToken}`,
           'Content-Type': 'application/json',
         },
       });
       
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('Session started:', data);
+      
       if (data.session_id) {
         setSessionId(data.session_id);
         setIsSessionActive(true);
-        
-        // Add welcome message
-        const welcomeMessage = {
-          id: '1',
-          text: "Hello! I'm Alex, your AI therapy companion. I'm here to listen and support you. How are you feeling today?",
-          isUser: false,
-          timestamp: new Date(),
-        };
-        setMessages([welcomeMessage]);
-        
-        // Speak welcome message
-        await speakMessage(welcomeMessage.text);
+
+        // Optionally add welcome message (only when user explicitly starts session)
+        if (showWelcome) {
+          const welcomeMessage = {
+            id: '1',
+            text: "Hello! I'm Alex, your AI therapy companion. I'm here to listen and support you. How are you feeling today?",
+            isUser: false,
+            timestamp: new Date(),
+          };
+          setMessages([welcomeMessage]);
+
+          // Speak welcome message if TTS is available
+          try {
+            await speakMessage(welcomeMessage.text);
+          } catch (error) {
+            console.log('TTS not available, continuing without audio');
+          }
+        }
       }
     } catch (error) {
       console.error('Error starting session:', error);
-      Alert.alert('Connection Error', 'Unable to start therapy session. Please try again.');
+      Alert.alert('Connection Error', `Unable to start therapy session: ${error.message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -167,7 +272,7 @@ const LiveAudioChatScreen = ({ navigation }) => {
     
     try {
       setIsProcessing(true);
-      const response = await fetch(`/session/close?session_id=${sessionId}`, {
+      const response = await fetch(`${API_BASE_URL}/session/close?session_id=${sessionId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${userToken}`,
@@ -175,21 +280,26 @@ const LiveAudioChatScreen = ({ navigation }) => {
         },
       });
       
-      const data = await response.json();
-      setIsSessionActive(false);
-      setSessionId(null);
-      
-      // Show session summary if available
-      if (data.summary) {
-        Alert.alert(
-          'Session Complete', 
-          `Thank you for sharing. Here's a brief summary: ${data.summary.substring(0, 100)}...`
-        );
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Session ended:', data);
+        
+        // Show session summary if available
+        if (data.summary) {
+          Alert.alert(
+            'Session Complete', 
+            `Thank you for sharing. Here's a brief summary: ${data.summary.substring(0, 100)}...`
+          );
+        }
       }
       
+      setIsSessionActive(false);
+      setSessionId(null);
       navigation.goBack();
     } catch (error) {
       console.error('Error ending session:', error);
+      Alert.alert('Error', 'There was an issue ending the session, but it will be closed automatically.');
+      navigation.goBack();
     } finally {
       setIsProcessing(false);
     }
@@ -197,7 +307,33 @@ const LiveAudioChatScreen = ({ navigation }) => {
 
   // Message Handling
   const handleUserMessage = async (text) => {
-    if (!sessionId || !text.trim()) return;
+    if (!text || !text.trim()) return;
+
+    // Ensure a session exists; lazily create on first message (without welcome TTS)
+    if (!sessionId) {
+      if (!sessionCreatingRef.current) {
+        sessionCreatingRef.current = true;
+        try {
+          await startSession(false);
+        } finally {
+          sessionCreatingRef.current = false;
+        }
+      } else {
+        // wait briefly for other create to finish
+        let attempts = 0;
+        while (!sessionId && attempts < 20) {
+          // wait 200ms
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((res) => setTimeout(res, 200));
+          attempts += 1;
+        }
+      }
+
+      if (!sessionId) {
+        Alert.alert('Connection Error', 'Unable to initialize session. Please try again.');
+        return;
+      }
+    }
 
     const userMessage = {
       id: Date.now().toString(),
@@ -208,11 +344,12 @@ const LiveAudioChatScreen = ({ navigation }) => {
 
     setMessages(prev => [...prev, userMessage]);
     setCurrentTranscript('');
+    setTextInput('');
     setIsProcessing(true);
 
     try {
-      // Send message to backend
-      await fetch('/session/message', {
+      // Send user message to backend
+      const messageResponse = await fetch(`${API_BASE_URL}/session/message`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${userToken}`,
@@ -225,8 +362,15 @@ const LiveAudioChatScreen = ({ navigation }) => {
         }),
       });
 
+      if (!messageResponse.ok) {
+        throw new Error(`Failed to save message: ${messageResponse.status}`);
+      }
+
+      const messageData = await messageResponse.json();
+      console.log('Message saved:', messageData);
+
       // Generate AI response
-      const response = await fetch(`/session/generate-question?session_id=${sessionId}`, {
+      const aiResponse = await fetch(`${API_BASE_URL}/session/generate-question?session_id=${sessionId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${userToken}`,
@@ -234,37 +378,42 @@ const LiveAudioChatScreen = ({ navigation }) => {
         },
       });
 
-      const data = await response.json();
-      if (data.response) {
+      if (!aiResponse.ok) {
+        throw new Error(`Failed to generate response: ${aiResponse.status}`);
+      }
+
+      const aiData = await aiResponse.json();
+      console.log('AI response:', aiData);
+      
+      if (aiData.response) {
         const aiMessage = {
           id: (Date.now() + 1).toString(),
-          text: data.response,
+          text: aiData.response,
           isUser: false,
           timestamp: new Date(),
         };
 
         setMessages(prev => [...prev, aiMessage]);
-        
-        // Save AI response to backend
-        await fetch('/session/message', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${userToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            session_id: sessionId,
-            text: data.response,
-            role: 'generated'
-          }),
-        });
 
-        // Speak AI response
-        await speakMessage(data.response);
+        // Speak AI response if TTS is available
+        try {
+          await speakMessage(aiData.response);
+        } catch (error) {
+          console.log('TTS not available for AI response');
+        }
       }
     } catch (error) {
       console.error('Error processing message:', error);
-      Alert.alert('Processing Error', 'Unable to process your message. Please try again.');
+      Alert.alert('Processing Error', `Unable to process your message: ${error.message}`);
+      
+      // Add error message to chat
+      const errorMessage = {
+        id: (Date.now() + 2).toString(),
+        text: "I'm sorry, I'm having trouble responding right now. Please try again.",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsProcessing(false);
     }
@@ -273,28 +422,129 @@ const LiveAudioChatScreen = ({ navigation }) => {
   // Audio Functions
   const speakMessage = async (text) => {
     try {
-      await Tts.speak(text);
+      if (isWeb) {
+        try {
+          if (window && window.speechSynthesis) {
+            // cancel any existing speech
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            utterance.rate = 1.0;
+            utterance.onstart = () => setIsSpeaking(true);
+            utterance.onend = () => setIsSpeaking(false);
+            utterance.onerror = () => setIsSpeaking(false);
+            webUtteranceRef.current = utterance;
+            window.speechSynthesis.speak(utterance);
+            return;
+          }
+        } catch (e) {
+          console.log('Web TTS failed', e);
+        }
+        return;
+      }
+
+      if (ttsRef.current && ttsRef.current.speak) {
+        await ttsRef.current.speak(text);
+      } else {
+        // no-op if TTS not available
+        return;
+      }
     } catch (error) {
       console.error('TTS error:', error);
+      throw error;
     }
   };
 
   const startListening = async () => {
     if (isSpeaking) {
-      await Tts.stop();
+      try {
+        if (ttsRef.current && ttsRef.current.stop) await ttsRef.current.stop();
+      } catch (e) {
+        // ignore
+      }
     }
-    
     try {
-      await Voice.start('en-US');
+      if (isWeb) {
+        // Web Speech API (SpeechRecognition)
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          Alert.alert('Microphone Unsupported', 'Speech recognition is not supported in this browser.');
+          return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => {
+          setIsListening(true);
+          animateMicrophone();
+        };
+
+        recognition.onresult = (event) => {
+          let interim = '';
+          let finalTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const res = event.results[i];
+            if (res.isFinal) {
+              finalTranscript += res[0].transcript;
+            } else {
+              interim += res[0].transcript;
+            }
+          }
+          if (interim) setCurrentTranscript(interim);
+          if (finalTranscript) {
+            setCurrentTranscript(finalTranscript);
+            handleUserMessage(finalTranscript);
+          }
+        };
+
+        recognition.onerror = (e) => {
+          console.error('Web recognition error', e);
+          setIsListening(false);
+          stopMicrophoneAnimation();
+          Alert.alert('Speech Recognition Error', 'Please try speaking again.');
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+          stopMicrophoneAnimation();
+        };
+
+        webRecognitionRef.current = recognition;
+        recognition.start();
+        return;
+      }
+
+      const V = voiceRef.current;
+      if (V && V.start) {
+        await V.start('en-US');
+      } else {
+        // native voice not available
+        Alert.alert('Microphone Unsupported', 'Voice recognition is not available on this platform.');
+      }
     } catch (error) {
       console.error('Error starting voice recognition:', error);
-      Alert.alert('Microphone Error', 'Unable to access microphone. Please check permissions.');
+      Alert.alert('Microphone Error', 'Unable to access microphone. You can still type your messages.');
     }
   };
 
   const stopListening = async () => {
     try {
-      await Voice.stop();
+      if (isWeb) {
+        const rec = webRecognitionRef.current;
+        if (rec && rec.stop) try { rec.stop(); } catch (e) {}
+        webRecognitionRef.current = null;
+        setIsListening(false);
+        stopMicrophoneAnimation();
+        return;
+      }
+
+      const V2 = voiceRef.current;
+      if (V2 && V2.stop) {
+        await V2.stop();
+      }
     } catch (error) {
       console.error('Error stopping voice recognition:', error);
     }
@@ -305,6 +555,15 @@ const LiveAudioChatScreen = ({ navigation }) => {
       stopListening();
     } else {
       startListening();
+    }
+  };
+
+  // frontend STT handled by react-native-voice (onSpeechResults/onSpeechPartialResults)
+
+  // Text input handling
+  const handleTextSubmit = () => {
+    if (textInput.trim()) {
+      handleUserMessage(textInput.trim());
     }
   };
 
@@ -344,13 +603,18 @@ const LiveAudioChatScreen = ({ navigation }) => {
         <View style={ChatStyles.centerContainer}>
           <Text style={ChatStyles.welcomeTitle}>AI Therapy Session</Text>
           <Text style={ChatStyles.welcomeSubtitle}>
-            Start a live audio conversation with Alex, your AI therapist
+            Start a live conversation with Alex, your AI therapist
           </Text>
           <TouchableOpacity 
             style={ChatStyles.startSessionButton}
             onPress={startSession}
+            disabled={isProcessing}
           >
-            <Text style={ChatStyles.startSessionButtonText}>Start Session</Text>
+            {isProcessing ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <Text style={ChatStyles.startSessionButtonText}>Start Session</Text>
+            )}
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -369,7 +633,7 @@ const LiveAudioChatScreen = ({ navigation }) => {
           <Text style={ChatStyles.headerSubtitle}>
             {isSpeaking ? 'Alex is speaking...' : 
              isListening ? 'Listening...' :
-             isProcessing ? 'Processing...' : 'Tap mic to speak'}
+             isProcessing ? 'Processing...' : 'Tap mic to speak or type below'}
           </Text>
         </View>
         <TouchableOpacity 
@@ -412,31 +676,60 @@ const LiveAudioChatScreen = ({ navigation }) => {
           )}
         </ScrollView>
 
-        <View style={ChatStyles.audioControlsContainer}>
-          <Animated.View style={{ transform: [{ scale: micAnimation }] }}>
+        {/* Input Section */}
+        <View style={ChatStyles.inputContainer}>
+          {/* Text Input */}
+          <View style={ChatStyles.textInputContainer}>
+            <TextInput
+              style={ChatStyles.textInput}
+              placeholder="Type your message..."
+              value={textInput}
+              onChangeText={setTextInput}
+              multiline
+              maxLength={500}
+              editable={!isProcessing}
+            />
             <TouchableOpacity 
               style={[
-                ChatStyles.micButton,
-                isListening && ChatStyles.micButtonActive,
-                (isSpeaking || isProcessing) && ChatStyles.micButtonDisabled
+                ChatStyles.sendButton,
+                (!textInput.trim() || isProcessing) && ChatStyles.sendButtonDisabled
               ]}
-              onPress={toggleListening}
-              disabled={isSpeaking || isProcessing}
+              onPress={handleTextSubmit}
+              disabled={!textInput.trim() || isProcessing}
             >
-              <Text style={ChatStyles.micButtonText}>
-                {isListening ? '🎤' : '🎙️'}
-              </Text>
+              <Text style={ChatStyles.sendButtonText}>Send</Text>
             </TouchableOpacity>
-          </Animated.View>
-          
-          {isSpeaking && (
-            <TouchableOpacity 
-              style={ChatStyles.stopSpeechButton}
-              onPress={() => Tts.stop()}
-            >
-              <Text style={ChatStyles.stopSpeechButtonText}>⏹️ Stop</Text>
-            </TouchableOpacity>
-          )}
+          </View>
+
+          {/* Audio Controls */}
+          <View style={ChatStyles.audioControlsContainer}>
+            <Animated.View style={{ transform: [{ scale: micAnimation }] }}>
+              <TouchableOpacity 
+                style={[
+                  ChatStyles.micButton,
+                  isListening && ChatStyles.micButtonActive,
+                  (isSpeaking || isProcessing) && ChatStyles.micButtonDisabled
+                ]}
+                onPress={toggleListening}
+                disabled={isSpeaking || isProcessing}
+              >
+                <Text style={ChatStyles.micButtonText}>
+                  {isListening ? '🎤' : '🎙️'}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+            
+            {isSpeaking && (
+              <TouchableOpacity 
+                style={ChatStyles.stopSpeechButton}
+                onPress={() => {
+                  try { if (ttsRef.current && ttsRef.current.stop) ttsRef.current.stop(); } catch (e) {}
+                }}
+              >
+                <Text style={ChatStyles.stopSpeechButtonText}>⏹️ Stop</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
