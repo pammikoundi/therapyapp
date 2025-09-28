@@ -9,7 +9,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { SettingsStyles } from './styles/AppStyles';
+import { SettingsStyles } from './styles';
 
 const SettingsScreen = ({ navigation }) => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
