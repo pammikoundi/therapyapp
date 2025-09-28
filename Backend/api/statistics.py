@@ -109,18 +109,34 @@ async def get_statistics(user=Depends(get_current_user)) -> Dict[str, Any]:
 @router.get("/goals")
 async def get_user_goals(user=Depends(get_current_user)) -> Dict[str, Any]:
     """
-    Get user's therapy goals and objectives.
+    Get user's therapy goals with AI-tracked progress.
     
-    Returns:
-        Dict containing list of user goals
+    Returns comprehensive goal tracking including:
+    - All goals with their current status (imagined, started, done, abandoned)
+    - Progress statistics and breakdowns
+    - Recent goal activity
     """
     try:
         if db is None:
             logger.warning("Database not available - returning mock goals for development")
             return {
                 "goals": [
-                    {"goal": "Improve sleep quality", "created_at": "2024-01-01", "status": "active"},
-                    {"goal": "Manage anxiety better", "created_at": "2024-01-02", "status": "active"}
+                    {
+                        "goal": "Improve sleep quality", 
+                        "status": "started", 
+                        "category": "health",
+                        "created_at": "2024-01-01", 
+                        "session_mentions": ["session1", "session3"],
+                        "confidence_score": 0.9
+                    },
+                    {
+                        "goal": "Manage anxiety better", 
+                        "status": "imagined", 
+                        "category": "anxiety",
+                        "created_at": "2024-01-02", 
+                        "session_mentions": ["session2"],
+                        "confidence_score": 0.8
+                    }
                 ],
                 "status": "development_mode"
             }
@@ -129,13 +145,57 @@ async def get_user_goals(user=Depends(get_current_user)) -> Dict[str, Any]:
         
         goals_query = db.collection("goals").where("user_id", "==", user["uid"])
         goals = list(goals_query.stream())
-        goal_list = [g.to_dict() for g in goals]
+        goal_list = []
         
-        logger.info(f"Found {len(goal_list)} goals for user")
+        # Organize goals by status
+        status_counts = {"imagined": 0, "started": 0, "done": 0, "abandoned": 0}
+        category_counts = {}
+        recent_activity = []
+        
+        for goal_doc in goals:
+            goal_data = goal_doc.to_dict()
+            goal_data["goal_id"] = goal_doc.id  # Include document ID
+            goal_list.append(goal_data)
+            
+            # Count by status
+            status = goal_data.get("status", "imagined")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            
+            # Count by category
+            category = goal_data.get("category", "other")
+            category_counts[category] = category_counts.get(category, 0) + 1
+            
+            # Track recent activity (last mentioned in last 7 days)
+            last_mentioned = goal_data.get("last_mentioned")
+            if last_mentioned:
+                try:
+                    from datetime import datetime, timedelta
+                    last_date = datetime.fromisoformat(last_mentioned.replace('Z', '+00:00'))
+                    if datetime.now().replace(tzinfo=last_date.tzinfo) - last_date < timedelta(days=7):
+                        recent_activity.append({
+                            "goal": goal_data.get("goal", ""),
+                            "status": status,
+                            "last_mentioned": last_mentioned
+                        })
+                except Exception as e:
+                    logger.warning(f"Could not parse last_mentioned date: {e}")
+        
+        # Sort goals by last mentioned (most recent first)
+        goal_list.sort(key=lambda g: g.get("last_mentioned", ""), reverse=True)
+        
+        logger.info(f"Found {len(goal_list)} goals for user with status breakdown: {status_counts}")
         
         return {
             "goals": goal_list,
             "total_goals": len(goal_list),
+            "status_breakdown": status_counts,
+            "category_breakdown": category_counts,
+            "recent_activity": recent_activity,
+            "progress_summary": {
+                "completion_rate": round(status_counts["done"] / max(len(goal_list), 1) * 100, 1),
+                "active_goals": status_counts["started"],
+                "total_completed": status_counts["done"]
+            },
             "status": "success"
         }
         
