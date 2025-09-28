@@ -444,7 +444,7 @@ const LiveAudioChatScreen = ({ navigation }) => {
         if (showWelcome) {
           const welcomeMessage = {
             id: '1',
-            text: "Hello! I'm Looma. I'm here to listen and support you. What would you like to talk about today?",
+            text: "What would you like to talk about today?",
             isUser: false,
             timestamp: new Date(),
           };
@@ -453,6 +453,8 @@ const LiveAudioChatScreen = ({ navigation }) => {
           // Speak welcome message if TTS is available
           try {
             await speakMessage(welcomeMessage.text);
+            // enable latched live mic so resume logic will re-open the mic after processing
+            setIsLatched(true);
           } catch (error) {
             console.log('TTS not available, continuing without audio');
           }
