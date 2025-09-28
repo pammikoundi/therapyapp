@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Animated,
   TextInput,
 } from 'react-native';
+import { router } from 'expo-router';
 import { ChatStyles, Colors } from '../styles/AppStyles';
 
 const LiveAudioChatScreen = ({ navigation }) => {
@@ -54,12 +55,196 @@ const LiveAudioChatScreen = ({ navigation }) => {
   const pendingRestartRef = useRef(false);
   const restartAttemptsRef = useRef(0);
   const lastRestartRef = useRef(0);
+  const isLatchedRef = useRef(false); // Track continuous mode state
+  const ttsCompletionCallbackRef = useRef(null); // Hook for TTS completion
+  const ttsTimeoutRef = useRef(null); // Timeout for TTS completion fallback
+  const audioContextRef = useRef(null); // Web Audio API context
+  const analyserRef = useRef(null); // Audio analyser for output detection
+  const audioMonitoringRef = useRef(false); // Flag to track if we're monitoring audio
+  const silenceTimeoutRef = useRef(null); // Timeout for silence detection
   const isWeb = Platform.OS === 'web';
+
+  // Helper to update isLatched state and ref together
+  const setIsLatchedState = (value) => {
+    console.log('Setting isLatched to:', value);
+    setIsLatched(value);
+    isLatchedRef.current = value;
+  };
+
+  // TTS Completion Hook System
+  const setTTSCompletionCallback = useCallback((callback) => {
+    console.log('Setting TTS completion callback');
+    ttsCompletionCallbackRef.current = callback;
+  }, []);
+
+  // Define stopAudioOutputMonitoring first
+  const stopAudioOutputMonitoring = useCallback(() => {
+    console.log('Stopping audio output monitoring');
+    audioMonitoringRef.current = false;
+    
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+  }, []);
+
+  const triggerTTSCompletion = useCallback(() => {
+    console.log('TTS completion triggered');
+    
+    // Stop audio monitoring
+    stopAudioOutputMonitoring();
+    
+    // Clear any existing timeout
+    if (ttsTimeoutRef.current) {
+      clearTimeout(ttsTimeoutRef.current);
+      ttsTimeoutRef.current = null;
+    }
+    
+    // Clear TTS state
+    setIsSpeaking(false);
+    pauseRecognitionRef.current = false;
+    
+    // Execute the callback if it exists
+    if (ttsCompletionCallbackRef.current) {
+      console.log('Executing TTS completion callback');
+      try {
+        ttsCompletionCallbackRef.current();
+      } catch (e) {
+        console.error('TTS completion callback error:', e);
+      }
+      // Clear the callback after execution
+      ttsCompletionCallbackRef.current = null;
+    }
+  }, [stopAudioOutputMonitoring]);
+
+  // Fallback timeout in case TTS events don't fire
+  const setTTSFallbackTimeout = useCallback((duration = 3000) => {
+    console.log('Setting TTS fallback timeout for', duration + 'ms');
+    
+    // Clear any existing timeout
+    if (ttsTimeoutRef.current) {
+      clearTimeout(ttsTimeoutRef.current);
+    }
+    
+    ttsTimeoutRef.current = setTimeout(() => {
+      console.log('TTS fallback timeout triggered');
+      triggerTTSCompletion();
+    }, duration);
+  }, [triggerTTSCompletion]);
+
+  // Audio Output Monitoring Functions
+  const initializeAudioMonitoring = useCallback(async () => {
+    if (!isWeb) return;
+    
+    try {
+      console.log('Initializing audio output monitoring');
+      
+      // Create or reuse audio context
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      
+      const audioContext = audioContextRef.current;
+      
+      // Resume context if suspended
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
+      // Create analyser for monitoring audio output
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+      
+      // Connect to destination (speakers) to monitor output
+      const destination = audioContext.destination;
+      
+      // Create a gain node to tap into the audio output
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 1.0;
+      
+      // Connect: destination <- gainNode <- analyser
+      gainNode.connect(destination);
+      analyser.connect(gainNode);
+      
+      analyserRef.current = analyser;
+      
+      console.log('Audio output monitoring initialized');
+    } catch (e) {
+      console.error('Failed to initialize audio monitoring:', e);
+    }
+  }, [isWeb]);
+  
+  const startAudioOutputMonitoring = useCallback(() => {
+    if (!isWeb || !analyserRef.current) return;
+    
+    console.log('Starting audio output monitoring');
+    audioMonitoringRef.current = true;
+    
+    const analyser = analyserRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    let consecutiveSilenceCount = 0;
+    const silenceThreshold = 20; // Audio level threshold
+    const silenceFramesNeeded = 20; // Number of consecutive silent frames
+    
+    const checkAudioOutput = () => {
+      if (!audioMonitoringRef.current) return;
+      
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate average audio level
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / bufferLength;
+      
+      if (average < silenceThreshold) {
+        consecutiveSilenceCount++;
+        if (consecutiveSilenceCount >= silenceFramesNeeded) {
+          console.log('Audio output silence detected - TTS likely finished');
+          stopAudioOutputMonitoring();
+          
+          // Wait a bit more to ensure complete silence, then trigger completion
+          setTimeout(() => {
+            if (isSpeaking) {
+              console.log('Audio monitoring confirms TTS completion');
+              triggerTTSCompletion();
+            }
+          }, 200);
+          return;
+        }
+      } else {
+        consecutiveSilenceCount = 0; // Reset silence counter
+      }
+      
+      // Continue monitoring
+      requestAnimationFrame(checkAudioOutput);
+    };
+    
+    // Start monitoring
+    requestAnimationFrame(checkAudioOutput);
+    
+    // Fallback timeout in case audio monitoring fails
+    silenceTimeoutRef.current = setTimeout(() => {
+      console.log('Audio monitoring timeout - forcing TTS completion');
+      stopAudioOutputMonitoring();
+      if (isSpeaking) {
+        triggerTTSCompletion();
+      }
+    }, 10000); // 10 second max timeout
+    
+  }, [isWeb, isSpeaking, triggerTTSCompletion, stopAudioOutputMonitoring]);
 
   // Initialize TTS and Voice Recognition
   useEffect(() => {
     // Web platform: use Web Speech API for STT and TTS
     if (isWeb) {
+      // Initialize audio monitoring for better TTS completion detection
+      initializeAudioMonitoring();
+      
       // Nothing synchronous needed here; initializeVoice will set up recognition instance
       initializeVoice();
       // choose a high-quality web voice if available
@@ -136,12 +321,13 @@ const LiveAudioChatScreen = ({ navigation }) => {
       };
 
       const onTtsFinish = () => {
+        console.log('Native TTS finished (first handler) - clearing pause and triggering completion');
         setIsSpeaking(false);
+        // Clear pause flag to allow recognition to restart
         pauseRecognitionRef.current = false;
-        // resume recognition if session is active
-        try {
-          if (isSessionActive) attemptRestartRecognition();
-        } catch (e) {}
+        
+        // Use TTS completion hook
+        triggerTTSCompletion();
       };
 
       const onTtsCancel = () => {
@@ -218,6 +404,119 @@ const LiveAudioChatScreen = ({ navigation }) => {
     };
   }, []);
 
+  // Cleanup when component unmounts or page is exited
+  useEffect(() => {
+    return () => {
+      console.log('Chat component unmounting - performing cleanup');
+      
+      try {
+        // Stop all TTS immediately
+        if (ttsRef.current && ttsRef.current.stop) {
+          ttsRef.current.stop();
+        }
+        if (isWeb && window && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
+        
+        // Stop all speech recognition
+        const rec = webRecognitionRef.current;
+        if (rec && rec.stop) {
+          rec.stop();
+        }
+        webRecognitionRef.current = null;
+        
+        if (voiceRef.current && voiceRef.current.stop) {
+          voiceRef.current.stop();
+        }
+        
+        // Clear TTS completion callbacks and timeouts
+        if (ttsCompletionCallbackRef.current) {
+          ttsCompletionCallbackRef.current = null;
+        }
+        if (ttsTimeoutRef.current) {
+          clearTimeout(ttsTimeoutRef.current);
+          ttsTimeoutRef.current = null;
+        }
+        
+        // Stop audio monitoring
+        stopAudioOutputMonitoring();
+        
+        // Close audio context
+        if (audioContextRef.current) {
+          try {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+          } catch (e) {
+            console.log('Error closing audio context:', e);
+          }
+        }
+        
+        // Disable continuous mode
+        setIsLatchedState(false);
+        
+        // Stop any pending restart attempts
+        pauseRecognitionRef.current = true;
+        restartAttemptsRef.current = 0;
+        
+        console.log('Chat cleanup completed');
+        
+      } catch (e) {
+        console.error('Error during chat cleanup:', e);
+      }
+    };
+  }, [setIsLatchedState]);
+
+  // Handle page visibility changes and beforeunload events
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        console.log('Page hidden - pausing audio processes');
+        // Pause recognition when page is hidden
+        pauseRecognitionRef.current = true;
+        
+        // Stop current recognition
+        try {
+          const rec = webRecognitionRef.current;
+          if (rec && rec.stop) {
+            rec.stop();
+          }
+          if (voiceRef.current && voiceRef.current.stop) {
+            voiceRef.current.stop();
+          }
+        } catch (e) {
+          console.log('Error stopping recognition on visibility change:', e);
+        }
+      }
+    };
+
+    const handleBeforeUnload = (e) => {
+      console.log('Page unloading - stopping all audio');
+      
+      // Stop TTS immediately
+      try {
+        if (ttsRef.current && ttsRef.current.stop) {
+          ttsRef.current.stop();
+        }
+        if (isWeb && window && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+        }
+      } catch (error) {
+        console.log('Error stopping TTS on unload:', error);
+      }
+    };
+
+    // Add event listeners for web platforms
+    if (isWeb) {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('beforeunload', handleBeforeUnload);
+      
+      return () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      };
+    }
+  }, [isWeb]);
+
   const initializeVoice = async () => {
     try {
       // Set up native Voice recognition event listeners if available
@@ -234,63 +533,59 @@ const LiveAudioChatScreen = ({ navigation }) => {
     }
   };
 
-  // Attempt to restart recognition with a small exponential backoff to avoid tight restart loops
+  // Attempt to restart recognition with longer delays to prevent rapid cycling
   const attemptRestartRecognition = () => {
     try {
-      if (pauseRecognitionRef.current) return;
-      if (!isSessionActive) return;
+      if (pauseRecognitionRef.current) {
+        console.log('Skipping restart - recognition is paused');
+        return;
+      }
+      if (!isSessionActive) {
+        console.log('Skipping restart - session not active');
+        return;
+      }
+      if (isListening) {
+        console.log('Skipping restart - already listening');
+        return;
+      }
 
       const now = Date.now();
       const attempts = restartAttemptsRef.current || 0;
-      const delay = Math.min(200 * Math.pow(2, attempts), 2000); // 200ms, 400ms, 800ms, ... cap 2000ms
+      
+      // Much longer delays to prevent rapid cycling
+      const delay = Math.min(1000 * Math.pow(1.5, attempts), 5000); // 1s, 1.5s, 2.25s, ... cap 5s
 
-      // prevent too-frequent restarts
-      if (lastRestartRef.current && now - lastRestartRef.current < 150) return;
+      // prevent too-frequent restarts - much longer cooldown
+      if (lastRestartRef.current && now - lastRestartRef.current < 2000) {
+        console.log('Skipping restart - too soon since last attempt');
+        return;
+      }
 
+      console.log('Scheduling restart attempt', attempts + 1, 'with delay', delay + 'ms');
       restartAttemptsRef.current = attempts + 1;
-      setTimeout(async () => {
+      
+      setTimeout(() => {
         try {
-          if (isWeb) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (SpeechRecognition) {
-              const r = new SpeechRecognition();
-              r.lang = 'en-US';
-              r.interimResults = true;
-              r.continuous = true;
-              r.maxAlternatives = 1;
-              r.onstart = () => { setIsListening(true); animateMicrophone(); };
-              // use persisted handlers if available
-              r.onresult = webOnResultRef.current || ((e) => {});
-              r.onerror = webOnErrorRef.current || ((e) => {});
-              r.onend = webOnEndRef.current || ((e) => {});
-              webRecognitionRef.current = r;
-              try { r.start(); }
-              catch (e) { console.error('Failed to start restarted web recognition', e); }
-            }
-          } else {
-            const V = voiceRef.current;
-            if (V && V.start) {
-              try { await V.start('en-US'); }
-              catch (e) { console.error('Failed to start restarted native voice', e); }
-            }
+          console.log('Executing restart attempt', attempts + 1);
+          
+          // Check conditions again before restarting
+          if (!isSessionActive || isListening || isSpeaking) {
+            console.log('Aborting restart - conditions changed');
+            return;
           }
-          // success — reset attempts
-          restartAttemptsRef.current = 0;
+          
+          startListening();
+          restartAttemptsRef.current = 0; // Reset on successful start
           lastRestartRef.current = Date.now();
         } catch (e) {
-          console.error('AttemptRestartRecognition failed', e);
+          console.error('Restart attempt failed', e);
         }
       }, delay);
-      // If we've retried several times without success, as a fallback call startListening()
-      if ((restartAttemptsRef.current || 0) >= 3) {
-        try {
-          console.log('Fallback: calling startListening directly after multiple attempts');
-          startListening();
-          restartAttemptsRef.current = 0;
-          lastRestartRef.current = Date.now();
-        } catch (e) {
-          console.error('Fallback startListening failed', e);
-        }
+      
+      // Stop trying after 3 attempts
+      if (attempts >= 2) {
+        console.log('Maximum restart attempts reached, stopping');
+        restartAttemptsRef.current = 0;
       }
     } catch (e) {
       console.error('attemptRestartRecognition error', e);
@@ -391,18 +686,11 @@ const LiveAudioChatScreen = ({ navigation }) => {
 
   const resumeMicAfterProcessing = () => {
     try {
-      console.log('Resuming mic after AI processing');
+      console.log('AI processing complete - clearing pause flag (TTS handlers will restart if needed)');
       pauseRecognitionRef.current = false;
-      if (isLatched) {
-        const delay = AUTO_RESTART_AFTER_PROCESSING_MS || AUTO_RESTART_AFTER_MS || 600;
-        setTimeout(() => {
-          try {
-            attemptRestartRecognition();
-          } catch (err) {
-            console.error('Error attempting restart after processing', err);
-          }
-        }, delay);
-      }
+      
+      // Don't restart here - let TTS completion handlers handle it to avoid conflicts
+      // This prevents multiple competing restart mechanisms
     } catch (e) {
       console.error('resumeMicAfterProcessing error', e);
     }
@@ -450,13 +738,22 @@ const LiveAudioChatScreen = ({ navigation }) => {
           };
           setMessages([welcomeMessage]);
 
+          // enable latched live mic first so TTS completion handlers know to restart mic
+          setIsLatchedState(true);
+          
           // Speak welcome message if TTS is available
           try {
+            // Disable automatic mic restart after welcome message to prevent loops
             await speakMessage(welcomeMessage.text);
-            // enable latched live mic so resume logic will re-open the mic after processing
-            setIsLatched(true);
+            console.log('Welcome message TTS completed - NOT auto-starting mic to prevent loops');
           } catch (error) {
             console.log('TTS not available, continuing without audio');
+            // If TTS fails, start listening immediately since we set isLatched
+            try {
+              await startListening();
+            } catch (e) {
+              console.log('Could not start listening after TTS failure:', e);
+            }
           }
         }
       }
@@ -469,22 +766,105 @@ const LiveAudioChatScreen = ({ navigation }) => {
   };
 
   const endSession = async () => {
-    // If there's no session id, still perform cleanup and close the screen
-    if (!sessionId) {
+    console.log('endSession called - FORCED SESSION END - sessionId:', sessionId);
+    
+    // IMMEDIATE STATE CLEANUP - stop everything now
+    console.log('Forcing immediate state cleanup');
+    setIsProcessing(false); // Clear processing flag immediately
+    setIsSpeaking(false);   // Clear speaking flag immediately
+    setIsListening(false);  // Clear listening flag immediately
+    
+    // Stop all audio and recognition immediately
+    const cleanupAudio = () => {
       try {
-        // stop any TTS or recognition
-        try { if (ttsRef.current && ttsRef.current.stop) ttsRef.current.stop(); } catch (e) {}
-        try { if (isWeb && window && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
-        try { const rec = webRecognitionRef.current; if (rec && rec.stop) rec.stop(); webRecognitionRef.current = null; } catch (e) {}
-        try { if (voiceRef.current && voiceRef.current.stop) voiceRef.current.stop(); } catch (e) {}
-      } catch (e) {}
+        console.log('Performing aggressive audio cleanup');
+        
+        // Stop TTS aggressively
+        if (ttsRef.current && ttsRef.current.stop) {
+          ttsRef.current.stop();
+          // Stop again after short delay
+          setTimeout(() => {
+            try { if (ttsRef.current && ttsRef.current.stop) ttsRef.current.stop(); } catch (e) {}
+          }, 50);
+        }
+        
+        if (isWeb && window && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.cancel(); // Call twice
+          setTimeout(() => {
+            try { window.speechSynthesis.cancel(); } catch (e) {}
+          }, 50);
+        }
+        
+        // Stop speech recognition aggressively
+        const rec = webRecognitionRef.current;
+        if (rec && rec.stop) {
+          rec.stop();
+          setTimeout(() => {
+            try { if (rec && rec.stop) rec.stop(); } catch (e) {}
+          }, 50);
+        }
+        webRecognitionRef.current = null;
+        
+        if (voiceRef.current && voiceRef.current.stop) {
+          voiceRef.current.stop();
+          setTimeout(() => {
+            try { if (voiceRef.current && voiceRef.current.stop) voiceRef.current.stop(); } catch (e) {}
+          }, 50);
+        }
+        
+        // Clear ALL TTS completion callbacks and timeouts
+        if (ttsCompletionCallbackRef.current) ttsCompletionCallbackRef.current = null;
+        if (ttsTimeoutRef.current) {
+          clearTimeout(ttsTimeoutRef.current);
+          ttsTimeoutRef.current = null;
+        }
+        
+        // Disable continuous mode and pause recognition
+        setIsLatchedState(false);
+        pauseRecognitionRef.current = true;
+        
+        console.log('Audio cleanup completed');
+        
+      } catch (e) {
+        console.error('Error during audio cleanup:', e);
+      }
+    };
+    
+    // Cleanup audio immediately
+    cleanupAudio();
+    
+    // If there's no session id, just navigate to statistics
+    if (!sessionId) {
+      console.log('No session ID, navigating to statistics');
       setIsSessionActive(false);
-      navigation.goBack && navigation.goBack();
+      // Navigate to statistics page using expo-router
+      try {
+        console.log('No sessionId - trying router.replace');
+        router.replace('/(tabs)/statistics');
+        console.log('Successfully navigated without sessionId');
+      } catch (routerError) {
+        console.error('No sessionId - router error:', routerError);
+        // Try push as fallback
+        try {
+          router.push('/(tabs)/statistics');
+        } catch (pushError) {
+          console.error('No sessionId - push error:', pushError);
+          // Fallback to traditional navigation
+          if (navigation.navigate) {
+            navigation.navigate('Statistics');
+          } else if (navigation.goBack) {
+            navigation.goBack();
+          }
+        }
+      }
       return;
     }
 
     try {
-      setIsProcessing(true);
+      // Don't set isProcessing(true) - we want to allow forced session end
+      console.log('Calling session close API for session:', sessionId);
+      
       const response = await fetch(`${API_BASE_URL}/session/close?session_id=${sessionId}`, {
         method: 'POST',
         headers: {
@@ -493,34 +873,74 @@ const LiveAudioChatScreen = ({ navigation }) => {
         },
       });
       
+      console.log('Session close response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
-        console.log('Session ended:', data);
+        console.log('Session ended successfully:', data);
         
-        // Show session summary if available
+        // Optional: Show session summary if available
         if (data.summary) {
-          Alert.alert(
-            'Session Complete', 
-            `Thank you for sharing. Here's a brief summary: ${data.summary.substring(0, 100)}...`
-          );
+          console.log('Session summary:', data.summary);
+          // You could show this in a modal or alert if desired
         }
+      } else {
+        console.error('Session close failed with status:', response.status);
+        const errorText = await response.text();
+        console.error('Session close error response:', errorText);
       }
       
-      // cleanup audio resources
-      try { if (ttsRef.current && ttsRef.current.stop) ttsRef.current.stop(); } catch (e) {}
-      try { if (isWeb && window && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
-      try { const rec = webRecognitionRef.current; if (rec && rec.stop) rec.stop(); webRecognitionRef.current = null; } catch (e) {}
-      try { if (voiceRef.current && voiceRef.current.stop) voiceRef.current.stop(); } catch (e) {}
-
-      setIsSessionActive(false);
-      setSessionId(null);
-      navigation.goBack && navigation.goBack();
     } catch (error) {
       console.error('Error ending session:', error);
-      Alert.alert('Error', 'There was an issue ending the session, but it will be closed automatically.');
-      navigation.goBack && navigation.goBack();
-    } finally {
-      setIsProcessing(false);
+      // Don't show alert - just log and continue to navigation
+    }
+    
+    // Always cleanup state and navigate
+    setIsSessionActive(false);
+    setSessionId(null);
+    setIsProcessing(false);
+    
+    // Navigate to statistics page using expo-router
+    console.log('Attempting to navigate to statistics page');
+    try {
+      console.log('Trying router.replace with /(tabs)/statistics');
+      router.replace('/(tabs)/statistics');
+      console.log('Successfully called router.replace');
+    } catch (routerError) {
+      console.error('Router.replace error:', routerError);
+      
+      // Try router.push as fallback
+      try {
+        console.log('Trying router.push as fallback');
+        router.push('/(tabs)/statistics');
+        console.log('Successfully called router.push');
+      } catch (pushError) {
+        console.error('Router.push error:', pushError);
+        
+        // Try different path formats
+        try {
+          console.log('Trying router.push with /statistics');
+          router.push('/statistics');
+        } catch (pathError) {
+          console.error('Alternative path error:', pathError);
+          
+          // Final fallback to traditional navigation
+          try {
+            console.log('Using traditional navigation fallback');
+            if (navigation.navigate) {
+              navigation.navigate('Statistics');
+            } else if (navigation.replace) {
+              navigation.replace('Statistics');
+            } else if (navigation.goBack) {
+              navigation.goBack();
+            } else {
+              console.error('No navigation method available');
+            }
+          } catch (navError) {
+            console.error('Traditional navigation error:', navError);
+          }
+        }
+      }
     }
   };
 
@@ -612,11 +1032,22 @@ const LiveAudioChatScreen = ({ navigation }) => {
 
         setMessages(prev => [...prev, aiMessage]);
 
+        // Ensure latched mode is active so mic will restart after TTS
+        setIsLatchedState(true);
+        
         // Speak AI response if TTS is available
         try {
+          // Disable automatic mic restart after AI response to prevent loops
           await speakMessage(aiData.response);
+          console.log('AI response TTS completed - NOT auto-starting mic to prevent loops');
         } catch (error) {
           console.log('TTS not available for AI response');
+          // If TTS fails, start listening immediately since we set isLatched
+          try {
+            await startListening();
+          } catch (e) {
+            console.log('Could not start listening after AI TTS failure:', e);
+          }
         }
       }
     } catch (error) {
@@ -636,10 +1067,55 @@ const LiveAudioChatScreen = ({ navigation }) => {
     }
   };
 
-  // Audio Functions
-const speakMessage = async (text) => {
+// Audio Functions
+const speakMessage = async (text, onComplete = null) => {
   try {
     console.log('Attempting to speak:', text);
+    
+    // AGGRESSIVE SPEECH RECOGNITION STOPPING BEFORE TTS
+    console.log('Aggressively stopping all speech recognition before TTS');
+    try {
+      // Stop web recognition multiple times
+      const rec = webRecognitionRef.current;
+      if (rec && rec.stop) {
+        rec.stop();
+        // Wait and stop again
+        setTimeout(() => {
+          try {
+            if (rec && rec.stop) rec.stop();
+          } catch (e) {}
+        }, 50);
+      }
+      webRecognitionRef.current = null;
+      
+      // Stop native recognition multiple times
+      if (voiceRef.current && voiceRef.current.stop) {
+        await voiceRef.current.stop();
+        // Wait a bit and stop again
+        await new Promise(resolve => setTimeout(resolve, 100));
+        try {
+          await voiceRef.current.stop();
+        } catch (e) {}
+      }
+      
+      // Update UI state immediately
+      setIsListening(false);
+      stopMicrophoneAnimation();
+      
+      // Set pause flag to prevent automatic restarts
+      pauseRecognitionRef.current = true;
+      
+      // Wait additional time to ensure recognition is fully stopped
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+    } catch (e) {
+      console.error('Error stopping recognition before TTS:', e);
+    }
+    
+    // Set up TTS completion callback if provided
+    if (onComplete) {
+      setTTSCompletionCallback(onComplete);
+    }
     
     if (isWeb) {
       try {
@@ -663,18 +1139,26 @@ const speakMessage = async (text) => {
             utterance.volume = 1.0;
           
           utterance.onstart = () => {
-            console.log('Web TTS started');
+            console.log('Web TTS started - beginning audio output monitoring');
             setIsSpeaking(true);
+            
+            // Start monitoring actual audio output
+            startAudioOutputMonitoring();
           };
           
           utterance.onend = () => {
-            console.log('Web TTS ended');
-            setIsSpeaking(false);
+            console.log('Web TTS onend event fired (may be unreliable)');
+            // Don't immediately trigger completion - let audio monitoring handle it
+            // Audio monitoring will detect when speakers actually stop outputting sound
           };
           
           utterance.onerror = (error) => {
             console.log('Web TTS error:', error);
             setIsSpeaking(false);
+            stopAudioOutputMonitoring();
+            // Clear pause flag
+            pauseRecognitionRef.current = false;
+            triggerTTSCompletion();
           };
           
           webUtteranceRef.current = utterance;
@@ -685,34 +1169,13 @@ const speakMessage = async (text) => {
             if (rec && rec.stop) try { rec.stop(); } catch (e) {}
           } catch (e) {}
 
-          utterance.onend = () => {
-            console.log('Web TTS ended (utterance.onend) - pauseRecognitionRef, isSessionActive:', pauseRecognitionRef.current, isSessionActive);
-            setIsSpeaking(false);
-            pauseRecognitionRef.current = false;
-            try {
-              if (isSessionActive) {
-                    console.log('Attempting immediate startListening() from web utterance.onend');
-                    try {
-                      (async () => {
-                        try {
-                          await startListening();
-                          return;
-                        } catch (e) {
-                          console.error('Immediate startListening() failed on web:', e);
-                        }
-                      })();
-                    } catch (e) {
-                      console.error('Immediate startListening wrapper failed on web:', e);
-                    }
-
-                    console.log('Calling attemptRestartRecognition from web utterance.onend');
-                    attemptRestartRecognition();
-              }
-            } catch (e) { console.error('Error in utterance.onend handler', e); }
-          };
-
           window.speechSynthesis.speak(utterance);
-          console.log('Web TTS initiated');
+          console.log('Web TTS initiated - audio monitoring will detect completion');
+          
+          // Reduced fallback timeout since audio monitoring is more reliable
+          if (onComplete) {
+            setTTSFallbackTimeout(8000); // 8 second fallback (longer since we're using audio monitoring)
+          }
           return;
         } else {
           console.log('Web Speech Synthesis not available');
@@ -735,6 +1198,11 @@ const speakMessage = async (text) => {
 
         await ttsRef.current.speak(text);
         // speaking will emit events (tts-finish) which we listen to; resume there
+        
+        // Set fallback timeout for native TTS
+        if (onComplete) {
+          setTTSFallbackTimeout(5000); // 5 second fallback
+        }
       } catch (e) {
         console.error('Native TTS speak failed', e);
       }
@@ -800,21 +1268,16 @@ useEffect(() => {
       setIsSpeaking(true);
     };
     const onTtsFinish = () => {
-      console.log('Native TTS finished (second handler) - clearing pause and attempting restart');
+      console.log('Native TTS finished - restarting microphone if session is active and latched');
       setIsSpeaking(false);
       pauseRecognitionRef.current = false;
-      try {
-        if (isSessionActive) {
-          console.log('Attempting immediate native startListening() from onTtsFinish');
-          try {
-            startListening();
-            return;
-          } catch (e) {
-            console.error('Immediate startListening() failed on native:', e);
-          }
-          attemptRestartRecognition();
-        }
-      } catch (e) { console.error(e); }
+      
+      // Use TTS completion hook
+      console.log('Native TTS finished (second handler) - clearing pause and triggering completion');
+      setIsSpeaking(false);
+      // Clear pause flag to allow recognition to restart
+      pauseRecognitionRef.current = false;
+      triggerTTSCompletion();
     };
     const onTtsCancel = () => {
       console.log('Native TTS cancelled');
@@ -879,29 +1342,104 @@ useEffect(() => {
 }, []);
 
   const startListening = async () => {
-    if (isSpeaking) {
-      try {
-        if (ttsRef.current && ttsRef.current.stop) await ttsRef.current.stop();
-      } catch (e) {
-        // ignore
+    console.log('startListening called - isSpeaking:', isSpeaking, 'isListening:', isListening);
+    
+    // AGGRESSIVE AUDIO CLEANUP BEFORE STARTING SPEECH RECOGNITION
+    console.log('Performing aggressive audio cleanup before starting speech recognition');
+    try {
+      // Stop native TTS multiple times to ensure it stops
+      if (ttsRef.current && ttsRef.current.stop) {
+        await ttsRef.current.stop();
+        // Wait a bit and stop again
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await ttsRef.current.stop();
       }
+      
+      // Stop web TTS aggressively
+      if (isWeb && window && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.cancel(); // Call twice
+        // Wait and cancel again
+        setTimeout(() => {
+          try {
+            window.speechSynthesis.cancel();
+          } catch (e) {}
+        }, 100);
+      }
+      
+      // Clear any TTS completion callbacks and timeouts
+      if (ttsCompletionCallbackRef.current) {
+        ttsCompletionCallbackRef.current = null;
+      }
+      if (ttsTimeoutRef.current) {
+        clearTimeout(ttsTimeoutRef.current);
+        ttsTimeoutRef.current = null;
+      }
+      
+      // Update UI state
+      setIsSpeaking(false);
+      
+      // Wait additional time to ensure all audio is cleared
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+    } catch (e) {
+      console.error('Error stopping TTS before speech recognition:', e);
     }
+    
     try {
       if (isWeb) {
-        // Web Speech API (SpeechRecognition)
+        console.log('Starting web speech recognition');
+        
+        // Check for speech recognition support
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
-          Alert.alert('Microphone Unsupported', 'Speech recognition is not supported in this browser.');
+          console.error('Speech recognition not supported in this browser');
+          Alert.alert('Microphone Unsupported', 'Speech recognition is not supported in this browser. Please use the text input instead.');
+          return;
+        }
+        
+        // Check if we're in a secure context (required for speech recognition)
+        if (!window.isSecureContext && location.protocol !== 'http:') {
+          console.error('Speech recognition requires a secure context (HTTPS)');
+          Alert.alert('Secure Connection Required', 'Speech recognition requires a secure connection (HTTPS). Please use text input instead.');
           return;
         }
 
-          const recognition = new SpeechRecognition();
-        recognition.lang = 'en-US';
-          recognition.interimResults = true;
-          recognition.continuous = true; // keep capturing until user stops
+        console.log('Creating SpeechRecognition instance');
+        console.log('User agent:', navigator.userAgent);
+        console.log('Language:', navigator.language);
+        
+        const recognition = new SpeechRecognition();
+        console.log('SpeechRecognition instance created successfully');
+        
+        // Check default language
+        console.log('Default recognition.lang:', recognition.lang);
+        
+        // Try to set language to something simple first
+        console.log('Setting language to navigator.language:', navigator.language);
+        try {
+          recognition.lang = navigator.language || 'en-US';
+          console.log('Language set successfully to:', recognition.lang);
+        } catch (e) {
+          console.error('Error setting language:', e);
+          console.log('Trying with en-US');
+          try {
+            recognition.lang = 'en-US';
+            console.log('en-US set successfully');
+          } catch (e2) {
+            console.error('Error setting en-US:', e2);
+            console.log('Using default language');
+          }
+        }
+        
+        recognition.interimResults = true;
+        recognition.continuous = true;
         recognition.maxAlternatives = 1;
+        
+        console.log('Web speech recognition configured with final lang:', recognition.lang);
 
         recognition.onstart = () => {
+          console.log('Web speech recognition started');
           setIsListening(true);
           animateMicrophone();
         };
@@ -930,56 +1468,87 @@ useEffect(() => {
           console.error('Web recognition error', e);
           setIsListening(false);
           stopMicrophoneAnimation();
-          Alert.alert('Speech Recognition Error', 'Please try speaking again.');
+          
+          // Don't keep retrying if language is not supported
+          if (e.error === 'language-not-supported') {
+            console.error('Language not supported, disabling continuous mode');
+            setIsLatchedState(false); // Disable continuous mode to prevent infinite restarts
+            Alert.alert('Language Not Supported', 'Your browser does not support speech recognition for English. Please use the text input instead.');
+            return;
+          }
+          
+          // For other errors, show generic error
+          Alert.alert('Speech Recognition Error', 'Please try speaking again or use text input.');
         };
         webOnErrorRef.current = _onError;
         recognition.onerror = _onError;
 
         const _onEnd = () => {
-          // If latched (live conversation), restart recognition automatically
-          if (isLatched) {
-            try {
-              // small delay then restart
-              setTimeout(() => {
-                try {
-                  recognition.start();
-                } catch (e) {
-                  console.error('Failed to restart web recognition:', e);
-                }
-              }, 250);
-            } catch (e) {
-              console.error('Error restarting recognition onend:', e);
-            }
-          } else {
-            setIsListening(false);
-            stopMicrophoneAnimation();
-          }
+          console.log('Web speech recognition ended - isLatched:', isLatched, 'isSpeaking:', isSpeaking);
+          
+          // Don't immediately restart - wait for user input or TTS completion to trigger restart
+          setIsListening(false);
+          stopMicrophoneAnimation();
+          
+          // Only restart if we're not currently speaking (TTS) and we have processed a message
+          // The TTS completion handlers will restart listening when appropriate
         };
         webOnEndRef.current = _onEnd;
         recognition.onend = _onEnd;
 
         webRecognitionRef.current = recognition;
-        recognition.start();
+        console.log('Calling recognition.start() with lang:', recognition.lang);
+        
+        try {
+          recognition.start();
+          console.log('recognition.start() called successfully');
+        } catch (e) {
+          console.error('Error calling recognition.start():', e);
+          setIsListening(false);
+          stopMicrophoneAnimation();
+          Alert.alert('Microphone Error', 'Unable to start speech recognition. Please use text input instead.');
+          return;
+        }
+        
         return;
       }
 
+      console.log('Attempting to start native voice recognition');
       const V = voiceRef.current;
       if (V && V.start) {
+        console.log('Starting native voice recognition with en-US');
         await V.start('en-US');
+        console.log('Native voice recognition started successfully');
       } else {
+        console.error('Native voice not available - V:', !!V, 'V.start:', !!(V && V.start));
         // native voice not available
         Alert.alert('Microphone Unsupported', 'Voice recognition is not available on this platform.');
       }
     } catch (error) {
       console.error('Error starting voice recognition:', error);
-      Alert.alert('Microphone Error', 'Unable to access microphone. You can still type your messages.');
+      setIsListening(false);
+      stopMicrophoneAnimation();
+      
+      // If speech recognition fails completely, disable continuous mode
+      if (isWeb) {
+        console.log('Disabling continuous mode due to web speech recognition failure');
+        setIsLatchedState(false);
+      }
+      
+      Alert.alert('Microphone Error', 'Speech recognition is not working. Please use the text input to continue your conversation.');
     }
   };
 
-  const stopListening = async () => {
+  const stopListening = async (disableContinuous = false) => {
     try {
-      // clear latched mode
-      setIsLatched(false);
+      console.log('stopListening called - disableContinuous:', disableContinuous);
+      
+      // Optionally disable continuous mode
+      if (disableContinuous) {
+        console.log('Disabling continuous mode');
+        setIsLatchedState(false);
+      }
+      
       if (isWeb) {
         const rec = webRecognitionRef.current;
         if (rec && rec.stop) try { rec.stop(); } catch (e) {}
@@ -999,12 +1568,47 @@ useEffect(() => {
   };
 
   const toggleListening = () => {
-    // toggle latched live-conversation mode
-    if (isLatched) {
-      setIsLatched(false);
-      stopListening();
+    console.log('Manual toggle pressed - current state: isListening=', isListening, 'isLatched=', isLatched);
+    
+    if (isListening) {
+      // If currently listening, aggressively stop everything
+      console.log('Manual stop - aggressively stopping all audio processes');
+      
+      // Aggressively stop any TTS that might be playing
+      try {
+        if (isWeb && window && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.cancel(); // Call twice
+          setTimeout(() => {
+            try { window.speechSynthesis.cancel(); } catch (e) {}
+          }, 100);
+        }
+        if (ttsRef.current && ttsRef.current.stop) {
+          ttsRef.current.stop();
+          setTimeout(() => {
+            try { ttsRef.current.stop(); } catch (e) {}
+          }, 100);
+        }
+      } catch (e) {
+        console.log('Error stopping TTS on manual toggle:', e);
+      }
+      
+      // Clear all TTS completion callbacks
+      if (ttsCompletionCallbackRef.current) {
+        ttsCompletionCallbackRef.current = null;
+      }
+      if (ttsTimeoutRef.current) {
+        clearTimeout(ttsTimeoutRef.current);
+        ttsTimeoutRef.current = null;
+      }
+      
+      // Stop listening and disable continuous mode
+      stopListening(true); // true = disable continuous mode
+      
     } else {
-      setIsLatched(true);
+      // If not listening, start listening and enable continuous mode
+      console.log('Manual start - enabling continuous listening');
+      setIsLatchedState(true); // Enable continuous mode
       startListening();
     }
   };
@@ -1084,16 +1688,16 @@ useEffect(() => {
           <Text style={ChatStyles.headerSubtitle}>
             {isSpeaking ? 'Looma is speaking...' : 
              isListening ? 'Listening...' :
-             isProcessing ? 'Processing...' : 'Tap mic to speak or type below'}
+             isProcessing ? 'Processing...' : 
+             isLatched ? 'Ready - will listen after responses' : 'Tap mic to start or type below'}
           </Text>
         </View>
         <TouchableOpacity 
           style={ChatStyles.endSessionButton}
           onPress={() => {
-            if (isProcessing) {
-              Alert.alert('Please wait', 'An operation is in progress. Please wait a moment.');
-              return;
-            }
+            console.log('End Session button pressed - forcing session end');
+            // Always allow ending session, even if processing
+            console.log('Calling endSession function (forced)');
             endSession();
           }}
         >
@@ -1146,7 +1750,9 @@ useEffect(() => {
                   onPress={toggleListening}
                   disabled={isSpeaking || isProcessing}
                 >
-                  <Text style={ChatStyles.micButtonText}>{isLatched ? '📞' : (isListening ? '🎤' : '🎙️')}</Text>
+                  <Text style={ChatStyles.micButtonText}>
+                    {isListening ? '🎤' : '🎙️'}
+                  </Text>
                 </TouchableOpacity>
               </View>
 
@@ -1201,7 +1807,9 @@ useEffect(() => {
                   onPress={toggleListening}
                   disabled={isSpeaking || isProcessing}
                 >
-                  <Text style={ChatStyles.micButtonText}>{isLatched ? '📞' : (isListening ? '🎤' : '🎙️')}</Text>
+                  <Text style={ChatStyles.micButtonText}>
+                    {isListening ? '🎤' : '🎙️'}
+                  </Text>
                 </TouchableOpacity>
               </View>
 
